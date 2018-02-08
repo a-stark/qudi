@@ -1,31 +1,33 @@
 # -*- coding: utf-8 -*-
 """
-This file contains the QuDi counter logic class.
+This file contains the Qudi counter logic class.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-from logic.generic_logic import GenericLogic
-from pyqtgraph.Qt import QtCore
-from core.util.mutex import Mutex
+
+from qtpy import QtCore
 from collections import OrderedDict
 import numpy as np
-import matplotlib as mpl
 import matplotlib.pyplot as plt
+
+from core.module import Connector
+from core.util.mutex import Mutex
+from logic.generic_logic import GenericLogic
 
 
 class QdplotLogic(GenericLogic):
@@ -44,36 +46,20 @@ class QdplotLogic(GenericLogic):
     _modtype = 'logic'
 
     # declare connectors
-    _in = {'savelogic': 'SaveLogic'
-           }
-    _out = {'qdplotlogic': 'QdplotLogic'}
+    savelogic = Connector(interface='SaveLogic')
 
-    def __init__(self, manager, name, config, **kwargs):
+    def __init__(self, **kwargs):
         """ Create QdplotLogic object with connectors.
 
-        @param object manager: Manager object thath loaded this module
-        @param str name: unique module name
-        @param dict config: module configuration
         @param dict kwargs: optional parameters
         """
-        # declare actions for state transitions
-        state_actions = {'onactivate': self.activation,
-                         'ondeactivate': self.deactivation}
-        super().__init__(manager, name, config, state_actions, **kwargs)
+        super().__init__(**kwargs)
 
         # locking for thread safety
         self.threadlock = Mutex()
 
-    def activation(self, e):
+    def on_activate(self):
         """ Initialisation performed during activation of the module.
-
-        @param object e: Event class object from Fysom.
-                         An object created by the state machine module Fysom,
-                         which is connected to a specific event (have a look in
-                         the Base Class). This object contains the passed event
-                         the state before the event happens and the destination
-                         of the state which should be reached after the event
-                         has happen.
         """
         self.indep_vals = np.zeros((10,))
         self.depen_vals = np.zeros((10,))
@@ -84,42 +70,47 @@ class QdplotLogic(GenericLogic):
         self.set_hlabel()
         self.set_vlabel()
 
-        self._save_logic = self.connector['in']['savelogic']['object']
+        self._save_logic = self.get_connector('savelogic')
 
-    def deactivation(self, e):
+    def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
-
-        @param object e: Event class object from Fysom. A more detailed
-                         explanation can be found in method activation.
         """
         return
 
-    def set_data(self, x=None, y=None):
+    def set_data(self, x=None, y=None, clear_old=True):
         """Set the data to plot
+
+        @param np.ndarray/list or list of np.ndarrays/lists x: data of independents variable(s)
+        @param np.ndarray/list or list of np.ndarrays/lists y: data of dependent variable(s)
+        @param bool clear_old: clear old plots in GUI if True
         """
+
         if x is None:
-            self.logMsg('No x-values provided, cannot set plot data.',
-                        msgType='error',
-                        importance=3
-                        )
+            self.log.error('No x-values provided, cannot set plot data.')
             return -1
 
         if y is None:
-            self.logMsg('No y-values provided, cannot set plot data.',
-                        msgType='error',
-                        importance=3
-                        )
+            self.log.error('No y-values provided, cannot set plot data.')
             return -1
 
-        self.indep_vals = x
-        self.depen_vals = y
+        self.clear_old = clear_old
+        # check if input is only an array (single plot) or a list of arrays (several plots)
+        if len(x) == 1:
+            self.indep_vals = [x]
+            self.depen_vals = [y]
+        else:
+            self.indep_vals = x
+            self.depen_vals = y
 
         self.sigPlotDataUpdated.emit()
         self.sigPlotParamsUpdated.emit()
+
+        self.set_domain()
+        self.set_range()
         return
 
     def set_domain(self, newdomain=None):
-        """Set the plot domain
+        """Set the plot domain, to match the data (default) or to a specified new domain.
 
         @param float newdomain: 2-element list containing min and max x-values
         """
@@ -127,13 +118,16 @@ class QdplotLogic(GenericLogic):
         if newdomain is not None:
             self.plot_domain = newdomain
         else:
-            return -1
+            domain_min = np.min([np.min(values) for values in self.indep_vals])
+            domain_max = np.max([np.max(values) for values in self.indep_vals])
+            domain_range = domain_max - domain_min
+            self.plot_domain = [domain_min - 0.02*domain_range, domain_max + 0.02*domain_range]
 
         self.sigPlotParamsUpdated.emit()
         return 0
 
     def set_range(self, newrange=None):
-        """Set the plot range
+        """Set the plot range, to match the data (default) or to a specified new range
 
         @param float newrange: 2-element list containing min and max y-values
         """
@@ -141,7 +135,10 @@ class QdplotLogic(GenericLogic):
         if newrange is not None:
             self.plot_range = newrange
         else:
-            return -1
+            range_min = np.min([np.min(values) for values in self.depen_vals])
+            range_max = np.max([np.max(values) for values in self.depen_vals])
+            range_range = range_max - range_min
+            self.plot_range = [range_min - 0.02*range_range, range_max + 0.02*range_range]
 
         self.sigPlotParamsUpdated.emit()
         return 0
@@ -205,15 +202,17 @@ class QdplotLogic(GenericLogic):
 
         # prepare the data in a dict or in an OrderedDict:
         data = OrderedDict()
-        data[indep_label] = self.indep_vals
-        data[depen_label] = self.depen_vals
+        for ii in range(len(self.indep_vals)):
+            data['indep_label'+str(ii+1)] = self.indep_vals[ii]
+            data['depen_label'+str(ii+1)] = self.depen_vals[ii]
 
         # Prepare the figure to save as a "data thumbnail"
         plt.style.use(self._save_logic.mpl_qd_style)
 
         fig, ax1 = plt.subplots()
 
-        ax1.plot(self.indep_vals, self.depen_vals)
+        for ii in range(len(self.indep_vals)):
+            ax1.plot(self.indep_vals[ii], self.depen_vals[ii], linestyle=':', linewidth=1)
 
         ax1.set_xlabel(indep_label)
         ax1.set_ylabel(depen_label)
@@ -227,10 +226,10 @@ class QdplotLogic(GenericLogic):
 
         # Call save logic to write everything to file
         self._save_logic.save_data(data,
-                                   filepath,
+                                   filepath=filepath,
                                    parameters=parameters,
                                    filelabel=filelabel,
-                                   as_text=True,
-                                   plotfig=fig
-                                   )
-        self.logMsg('Data saved to:\n{0}'.format(filepath), msgType='status', importance=3)
+                                   plotfig=fig,
+                                   delimiter='\t')
+        plt.close(fig)
+        self.log.debug('Data saved to:\n{0}'.format(filepath))

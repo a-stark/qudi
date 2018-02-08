@@ -2,18 +2,18 @@
 """
 Parent poller mechanism from IPython.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
@@ -29,9 +29,12 @@ import signal
 import time
 from _thread import interrupt_main
 from threading import Thread
-
+import logging
+logger = logging.getLogger(__name__)
 
 def waitForClose():
+    """ Wait for program to close on its own and print some old school meme in the meantime.
+    """
     time.sleep(1)
     print('> Mechanic: Somebody set us up the bomb.')
     time.sleep(2)
@@ -50,11 +53,17 @@ class ParentPollerUnix(Thread):
     """
 
     def __init__(self, quitfunction=None):
+        """ Create the parentpoller.
+
+            @param callable quitfunction: function to run before exiting
+        """
         super().__init__()
         self.daemon = True
         self.quitfunction = quitfunction
 
     def run(self):
+        """ Run the parentpoller.
+        """
         # We cannot use os.waitpid because it works only for child processes.
         from errno import EINTR
         while True:
@@ -138,5 +147,5 @@ class ParentPollerWindows(Thread):
                     os._exit(1)
             elif result < 0:
                 # wait failed, just give up and stop polling.
-                print("Parent poll failed!!!!!")
+                logger.critical("Parent poll failed!!!!!")
                 return

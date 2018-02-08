@@ -2,18 +2,18 @@
 """
 Qt-based IPython/jupyter kernel
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 ------------------------------------------------------------------------------
 based on simple_kernel.py (https://github.com/dsblank/simple_kernel)
@@ -47,9 +47,8 @@ import uuid
 import errno
 import hashlib
 import datetime
-import threading
 import logging
-import builtins
+from warnings import warn
 
 import ast
 import traceback
@@ -62,14 +61,13 @@ from zmq.error import ZMQError
 from .compilerop import CachingCompiler, check_linecache_ipython
 from .display_trap import DisplayTrap
 from .builtin_trap import BuiltinTrap
-from .redirect import redirect_stdout, redirect_stderr
+from .redirect import RedirectedStdOut, RedirectedStdErr
 from .stream import QZMQStream
 from .helpers import *
 from .events import EventManager, available_events
+from IPython.core.error import InputRejected
 
-from pyqtgraph.Qt import QtCore
-QtCore.Signal = QtCore.pyqtSignal
-
+from qtpy import QtCore
 
 class QZMQHeartbeat(QtCore.QObject):
     """ Echo Messages on a ZMQ stream. """
@@ -78,17 +76,21 @@ class QZMQHeartbeat(QtCore.QObject):
         self.stream = stream
         self.stream.sigMsgRecvd.connect(self.beat)
 
+    @QtCore.Slot(bytes)
     def beat(self, msg):
         """ Send a message back.
 
-          @param msg: messae to be sent back
+          @param msg: message to be sent back
         """
-        logging.debug( "HB: %s" % msg)
+        logging.debug( "HB: {}".format(msg))
+        if len(msg) > 0:
+            retmsg = msg[0]
         try:
-            self.stream.socket.send(msg)
+            self.stream.socket.send(retmsg)
         except zmq.ZMQError as e:
             if e.errno != errno.EINTR:
                 raise
+
 
 class QZMQKernel(QtCore.QObject):
     """ A Qt-based embeddable kernel for Jupyter. """
@@ -141,9 +143,9 @@ class QZMQKernel(QtCore.QObject):
         self.auth = hmac.HMAC(
             self.secure_key,
             digestmod=self.signature_schemes[self.config["signature_scheme"]])
-        logging.info('New Kernel {}'.format(self.engine_id))
+        logging.debug('New Kernel {}'.format(self.engine_id))
 
-    @QtCore.pyqtSlot()
+    @QtCore.Slot()
     def connect_kernel(self):
         # Heartbeat:
         self.ctx = zmq.Context()
@@ -155,32 +157,31 @@ class QZMQKernel(QtCore.QObject):
         self.iopub_socket = self.ctx.socket(zmq.PUB)
         self.config["iopub_port"] = self.bind(self.iopub_socket, self.connection, self.config["iopub_port"])
         self.iopub_stream = QZMQStream(self.iopub_socket)
-        self.iopub_stream.sigMsgRecvd.connect(self.iopub_handler)
+        self.iopub_stream.sigMsgRecvd.connect(self.iopub_handler, QtCore.Qt.QueuedConnection)
         # Control:
         self.control_socket = self.ctx.socket(zmq.ROUTER)
         self.config["control_port"] = self.bind(self.control_socket, self.connection, self.config["control_port"])
         self.control_stream = QZMQStream(self.control_socket)
-        self.control_stream.sigMsgRecvd.connect(self.control_handler)
+        self.control_stream.sigMsgRecvd.connect(self.control_handler, QtCore.Qt.QueuedConnection)
         # Stdin:
         self.stdin_socket = self.ctx.socket(zmq.ROUTER)
         self.config["stdin_port"] = self.bind(self.stdin_socket, self.connection, self.config["stdin_port"])
         self.stdin_stream = QZMQStream(self.stdin_socket)
-        self.stdin_stream.sigMsgRecvd.connect(self.stdin_handler)
+        self.stdin_stream.sigMsgRecvd.connect(self.stdin_handler, QtCore.Qt.QueuedConnection)
         # Shell:
         self.shell_socket = self.ctx.socket(zmq.ROUTER)
         self.config["shell_port"] = self.bind(self.shell_socket, self.connection, self.config["shell_port"])
         self.shell_stream = QZMQStream(self.shell_socket)
-        self.shell_stream.sigMsgRecvd.connect(self.shell_handler)
+        self.shell_stream.sigMsgRecvd.connect(self.shell_handler, QtCore.Qt.QueuedConnection)
 
-        logging.info( "Config: %s" % json.dumps(self.config))
-        logging.info( "Starting loops...")
+        logging.debug("Config: %s" % json.dumps(self.config))
 
         self.heartbeat_handler = QZMQHeartbeat(self.heartbeat_stream)
         self.heartbeat_handler.moveToThread(self.hb_thread)
         self.hb_thread.start()
 
         self.init_exec_env()
-        logging.info( "Ready! Listening...")
+        logging.info('{} ready! Listening...'.format(self.engine_id))
 
     def init_exec_env(self):
         self.execution_count = 1
@@ -194,13 +195,15 @@ class QZMQKernel(QtCore.QObject):
         self.builtin_trap = BuiltinTrap()
         setup_matplotlib(self)
 
-    @QtCore.pyqtSlot()
+    @QtCore.Slot()
     def shutdown(self):
+        logging.info('{} shutting down.'.format(self.engine_id))
         self.iopub_stream.close()
         self.stdin_stream.close()
         self.shell_stream.close()
         self.control_stream.close()
         self.heartbeat_stream.close()
+
         self.iopub_socket.close()
         self.stdin_socket.close()
         self.shell_socket.close()
@@ -301,7 +304,7 @@ class QZMQKernel(QtCore.QObject):
             logging.info( "unknown msg_type: %s" % msg['header']["msg_type"])
 
     def shell_execute(self, identities, msg):
-        logging.info( "simple_kernel Executing: %s" % msg['content']["code"])
+        logging.debug( "simple_kernel Executing: %s" % msg['content']["code"])
         # tell the notebook server that we are busy
         content = {
             'execution_state': "busy",
@@ -318,8 +321,8 @@ class QZMQKernel(QtCore.QObject):
         self.displaydata = list()
         stream_stdout = StringIO()
         stream_stderr = StringIO()
-        with redirect_stderr(stream_stderr):
-            with redirect_stdout(stream_stdout):
+        with RedirectedStdErr(stream_stderr):
+            with RedirectedStdOut(stream_stdout):
                 # actual execution
                 try:
                     res = self.run_cell(msg['content']['code'])
@@ -486,7 +489,7 @@ class QZMQKernel(QtCore.QObject):
         # complete_request, complete_reply, history_request, history_reply
         # is_complete_request, is_complete_reply, connect_request, connect_reply
         # kernel_info_request, kernel_info_reply, shutdown_request, shutdown_reply
-        logging.info( "control received: %s" % wire_msg)
+        logging.debug( "control received: %s" % wire_msg)
         identities, msg = self.deserialize_wire_msg(wire_msg)
         # Control message handler:
         if msg['header']["msg_type"] == "shutdown_request":
@@ -496,12 +499,12 @@ class QZMQKernel(QtCore.QObject):
         # handle some of these messages:
         # stream, display_data, data_pub, execute_input, execute_result
         # error, status, clear_output
-        logging.info( "iopub received: %s" % msg)
+        logging.debug( "iopub received: %s" % msg)
 
     def stdin_handler(self, msg):
         # handle some of these messages:
         # input_request, input_reply
-        logging.info( "stdin received: %s" % msg)
+        logging.debug( "stdin received: %s" % msg)
 
     def bind(self, socket, connection, port):
         if port <= 0:

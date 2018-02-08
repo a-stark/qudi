@@ -3,20 +3,21 @@
 # emacs: -*- mode: python; py-indent-offset: 4; indent-tabs-mode: nil -*-
 # vi: set ft=python sts=4 ts=4 sw=4 et:
 """
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
-Copyright (C) 2015 Jan M. Binder jan.binder@uni-ulm.de
+Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
+top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 
 Contains code that used to be distributed under the terms of the Modified BSD License.
 See documentation/BSDLicense_IPython.md for details.
@@ -27,7 +28,7 @@ import subprocess
 import sys
 import os
 
-myenv = os.environ.copy() 
+myenv = os.environ.copy()
 
 if sys.platform == 'win32':
     from core.util.win_interrupt import create_interrupt_event
@@ -47,7 +48,14 @@ else:
 argv = [sys.executable, '-m', 'core'] + sys.argv[1:]
 
 while True:
-    process = subprocess.Popen(argv, close_fds=False, env=myenv, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, shell=False)
+    process = subprocess.Popen(
+        argv,
+        close_fds=False,
+        env=myenv,
+        stdin=sys.stdin,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+        shell=False)
     if sys.platform == 'win32':
         # Attach the interrupt event to the Popen objet so it can be used later.
         process.win32_interrupt_event = interrupt_event
@@ -58,6 +66,15 @@ while True:
         elif retval == 42:
             print('Restarting...')
             continue
+        elif retval == 2:
+            # invalid commandline argument
+            break
+        elif retval == -6:
+            # called if QFatal occurs
+            break
+        elif retval == 4:
+            print('Import Error: Qudi could not be started due to missing packages.')
+            sys.exit(retval)
         else:
             print('Unexpected return value {0}. Exiting.'.format(retval))
             sys.exit(retval)

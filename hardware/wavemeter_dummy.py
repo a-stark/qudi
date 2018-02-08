@@ -4,27 +4,27 @@
 This module provides a dummy wavemeter hardware module that is useful for
 troubleshooting logic and gui modules.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
 import random
-from pyqtgraph.Qt import QtCore
+from qtpy import QtCore
 
-from core.base import Base
+from core.module import Base, ConfigOption
 from interface.wavemeter_interface import WavemeterInterface
 from core.util.mutex import Mutex
 
@@ -63,7 +63,7 @@ class HardwarePull(QtCore.QObject):
         range_step = 0.1
 
         # update as long as the status is busy
-        if self._parentclass.getState() == 'running':
+        if self._parentclass.module_state() == 'running':
             # get the current wavelength from the wavemeter
             self._parentclass._current_wavelength += random.uniform(-range_step, range_step)
             self._parentclass._current_wavelength2 += random.uniform(-range_step, range_step)
@@ -74,16 +74,13 @@ class WavemeterDummy(Base, WavemeterInterface):
     _modclass = 'WavemeterDummy'
     _modtype = 'hardware'
 
-    # declare connectors
-    _out = {'highhinessewavemeter': 'WavemeterInterface'}
+    # config opts
+    _measurement_timing = ConfigOption('measurement_timing', 10.)
 
     sig_handle_timer = QtCore.Signal(bool)
 
-    def __init__(self, manager, name, config={}, **kwargs):
-        c_dict = {'onactivate': self.activation,
-                  'ondeactivate': self.deactivation}
-        Base.__init__(self, manager, name, configuration=config,
-                      callbacks=c_dict, **kwargs)
+    def __init__(self, config, **kwargs):
+        super().__init__(config=config, **kwargs)
 
         # locking for thread safety
         self.threadlock = Mutex()
@@ -92,17 +89,9 @@ class WavemeterDummy(Base, WavemeterInterface):
         self._current_wavelength = 700.0
         self._current_wavelength2 = 700.0
 
-        # time between two measurement points of the wavemeter in milliseconds
-        if 'measurement_timing' in config.keys():
-            self._measurement_timing = config['measurement_timing']
-        else:
-            self._measurement_timing = 10.
-            self.logMsg('No measurement_timing configured, '
-                        'using {} instead.'.format(self._measurement_timing),
-                        msgType='warning')
-
-    def activation(self, e):
-
+    def on_activate(self):
+        """ Activate module.
+        """
         # create an indepentent thread for the hardware communication
         self.hardware_thread = QtCore.QThread()
 
@@ -116,7 +105,9 @@ class WavemeterDummy(Base, WavemeterInterface):
         # start the event loop for the hardware
         self.hardware_thread.start()
 
-    def deactivation(self, e):
+    def on_deactivate(self):
+        """ Deactivate module.
+        """
 
         self.stop_acqusition()
         self.hardware_thread.quit()
@@ -134,15 +125,13 @@ class WavemeterDummy(Base, WavemeterInterface):
         """
 
         # first check its status
-        if self.getState() == 'running':
-            self.logMsg('Wavemeter busy',
-                        msgType='error')
+        if self.module_state() == 'running':
+            self.log.error('Wavemeter busy')
             return -1
 
-        self.run()
+        self.module_state.run()
         # actually start the wavemeter
-        self.logMsg('starting Wavemeter',
-                    msgType='warning')
+        self.log.warning('starting Wavemeter')
 
         # start the measuring thread
         self.sig_handle_timer.emit(True)
@@ -155,18 +144,17 @@ class WavemeterDummy(Base, WavemeterInterface):
         @return int: error code (0:OK, -1:error)
         """
         # check status just for a sanity check
-        if self.getState() == 'idle' or self.getState() == 'deactivated':
-            self.logMsg('Wavemeter was already stopped, stopping it anyway!',
-                        msgType='warning')
+        if self.module_state() == 'idle' or self.module_state() == 'deactivated':
+            self.log.warning('Wavemeter was already stopped, stopping it '
+                    'anyway!')
         else:
             # stop the measurement thread
             self.sig_handle_timer.emit(False)
             # set status to idle again
-            self.stop()
+            self.module_state.stop()
 
         # Stop the actual wavemeter measurement
-        self.logMsg('stopping Wavemeter',
-                    msgType='warning')
+        self.log.warning('stopping Wavemeter')
 
         return 0
 

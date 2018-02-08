@@ -2,55 +2,51 @@
 """
 This file contains a simulator for testing polarisation-dependence measurment tools
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-from core.base import Base
-from interface.slow_counter_interface import SlowCounterInterface
-from interface.motor_interface import MotorInterface
-from pyqtgraph.Qt import QtCore
-import time
-import random
 import numpy as np
+import random
+import time
+
+from core.module import Base, Connector
+from interface.motor_interface import MotorInterface
+from interface.slow_counter_interface import SlowCounterInterface
+from qtpy import QtCore
+
 
 class PolarizationDependenceSim(Base, SlowCounterInterface, MotorInterface):
 
-    """ This class wraps the slow-counter dummy and adds polarisation angle dependence in order to simulate dipole polarisation measurements.  
+    """ This class wraps the slow-counter dummy and adds polarisation angle dependence in order to simulate dipole polarisation measurements.
     """
 
     _modclass = 'polarizationdepsim'
     _modtype = 'hardware'
 
     # Connectors
-    _in = {'counter1': 'SlowCounterInterface'}
-
-    _out = {'polarizationdependencesim': 'PolarizationDependenceSim'}
+    counter1 = Connector(interface='SlowCounterInterface')
 
     _move_signal = QtCore.Signal()
 
-    def __init__(self, manager, name, config, **kwargs):
-        c_dict = {'onactivate': self.activation, 'ondeactivate': self.deactivation}
-        Base.__init__(self, manager, name, configuration=config, callbacks = c_dict)
-        
-    def activation(self, e):
+    def on_activate(self):
         """ Activation of the class
         """
         # name connected modules
-        self._counter_hw = self.connector['in']['counter1']['object']
+        self._counter_hw = self.get_connector('counter1')
 
         # Required class variables to pretend to be the counter hardware
         self._photon_source2 = None
@@ -68,7 +64,7 @@ class PolarizationDependenceSim(Base, SlowCounterInterface, MotorInterface):
         # Signals
         self._move_signal.connect(self._move_step, QtCore.Qt.QueuedConnection)
 
-    def deactivation(self,e):
+    def on_deactivate(self):
         self._counter_hw.close_counter()
         self._counter_hw.close_clock()
 
@@ -78,6 +74,10 @@ class PolarizationDependenceSim(Base, SlowCounterInterface, MotorInterface):
         """
         self.clock_frequency = clock_frequency
         return self._counter_hw.set_up_clock(clock_frequency = clock_frequency, clock_channel = clock_channel)
+
+    def get_constraints(self):
+        """ Pass through counter constraints. """
+        return self._counter_hw.get_constraints()
 
     def set_up_counter(self,
                        counter_channel=None,
@@ -118,7 +118,7 @@ class PolarizationDependenceSim(Base, SlowCounterInterface, MotorInterface):
     def move_rel(self, axis=None, distance=None):
         """ Move the polarisation angle by relative degrees
         """
-        if distance == None:
+        if distance is None:
             #TODO warning
             pass
 
@@ -137,7 +137,7 @@ class PolarizationDependenceSim(Base, SlowCounterInterface, MotorInterface):
     def move_abs(self, axis=None, position=None):
         """ Move the polarisation angle to absolute degrees
         """
-        if position == None:
+        if position is None:
             #TODO warning
             pass
         self.destination = position

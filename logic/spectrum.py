@@ -1,30 +1,34 @@
 # -*- coding: utf-8 -*-
 """
-This file contains the QuDi logic class that captures and processes fluorescence spectra.
+This file contains the Qudi logic class that captures and processes fluorescence spectra.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-from logic.generic_logic import GenericLogic
-from pyqtgraph.Qt import QtCore
-from core.util.mutex import Mutex
+from qtpy import QtCore
 from collections import OrderedDict
 import numpy as np
+import matplotlib.pyplot as plt
+
+from core.module import Connector
+from core.util.mutex import Mutex
 from core.util.network import netobtain
+from logic.generic_logic import GenericLogic
+
 
 class SpectrumLogic(GenericLogic):
 
@@ -38,52 +42,43 @@ class SpectrumLogic(GenericLogic):
     _modtype = 'logic'
 
     # declare connectors
-    _in = {'spectrometer': 'SpectrometerInterface',
-           'odmrlogic1': 'ODMRLogic',
-           'savelogic': 'SaveLogic'
-           }
-    _out = {'spectrumlogic': 'SpectrumLogic'}
+    spectrometer = Connector(interface='SpectrometerInterface')
+    odmrlogic1 = Connector(interface='ODMRLogic')
+    savelogic = Connector(interface='SaveLogic')
 
-    def __init__(self, manager, name, config, **kwargs):
+    def __init__(self, **kwargs):
         """ Create SpectrometerLogic object with connectors.
 
-          @param object manager: Manager object that loaded this module
-          @param str name: unique module name
-          @param dict config: module configuration
           @param dict kwargs: optional parameters
         """
-        # declare actions for state transitions
-        state_actions = {'onactivate': self.activation, 'ondeactivate': self.deactivation}
-        super().__init__(manager, name, config, state_actions, **kwargs)
+        super().__init__(**kwargs)
 
         # locking for thread safety
         self.threadlock = Mutex()
 
-    def activation(self, e):
+    def on_activate(self):
         """ Initialisation performed during activation of the module.
-
-          @param object e: Fysom state change event
         """
         self.spectrum_data = np.array([])
         self.diff_spec_data_mod_on = np.array([])
         self.diff_spec_data_mod_off = np.array([])
         self.repetition_count = 0    # count loops for differential spectrum
 
-        self._spectrometer_device = self.connector['in']['spectrometer']['object']
-        self._odmr_logic = self.connector['in']['odmrlogic1']['object']
-        self._save_logic = self.connector['in']['savelogic']['object']
+        self._spectrometer_device = self.get_connector('spectrometer')
+        self._odmr_logic = self.get_connector('odmrlogic1')
+        self._save_logic = self.get_connector('savelogic')
 
         self.sig_next_diff_loop.connect(self._loop_differential_spectrum)
 
-    def deactivation(self, e):
+    def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
-
-          @param object e: Fysom state change event
         """
-        if self.getState() != 'idle' and self.getState() != 'deactivated':
+        if self.module_state() != 'idle' and self.module_state() != 'deactivated':
             pass
 
     def get_single_spectrum(self):
+        """ Record a single spectrum from the spectrometer.
+        """
         self.spectrum_data = netobtain(self._spectrometer_device.recordSpectrum())
 
         # Clearing the differential spectra data arrays so that they do not get
@@ -201,9 +196,22 @@ class SpectrumLogic(GenericLogic):
         else:
             data['signal'] = self.spectrum_data[1, :]
 
+        # Prepare the figure to save as a "data thumbnail"
+        plt.style.use(self._save_logic.mpl_qd_style)
+
+        fig, ax1 = plt.subplots()
+
+        ax1.plot(data['wavelength'], data['signal'])
+
+        ax1.set_xlabel('Wavelength (nm)')
+        ax1.set_ylabel('Signal (arb. u.)')
+
+        fig.tight_layout()
+
         # Save to file
         self._save_logic.save_data(data,
-                                   filepath,
+                                   filepath=filepath,
                                    parameters=parameters,
                                    filelabel=filelabel,
-                                   as_text=True)
+                                   plotfig=fig)
+        self.log.debug('Spectrum saved to:\n{0}'.format(filepath))

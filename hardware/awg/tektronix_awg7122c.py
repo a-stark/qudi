@@ -1,91 +1,61 @@
 # -*- coding: utf-8 -*-
 
 """
-This file contains the QuDi hardware module for AWG7000 Series.
+This file contains the Qudi hardware module for AWG7000 Series.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
+from core.util.modules import get_home_dir
 import time
 from ftplib import FTP
 from socket import socket, AF_INET, SOCK_STREAM
-import numpy as np
 import os
+import re
 from collections import OrderedDict
 from fnmatch import fnmatch
 
-
-from core.base import Base
-from interface.pulser_interface import PulserInterface
+from core.module import Base, ConfigOption
+from interface.pulser_interface import PulserInterface, PulserConstraints
 
 
 # todo: add in squencing a method which changes from dynamic to jump in order to get triggers for odmr
 class AWG7122C(Base, PulserInterface):
-    """ Unstable and in construction, Jochen Scheuer    """
+    """ Unstable and under construction, Jochen Scheuer    """
 
     _modclass = 'awg7122c'
     _modtype = 'hardware'
 
-    # declare connectors
-    # _out = {'awg5002c': 'PulserInterface'}
-    _out = {'pulser': 'PulserInterface'}
+    # config options
+    ip_address = ConfigOption('awg_IP_address', missing='error')
+    port = ConfigOption('awg_port', missing='error')
+    ftp_path = ConfigOption('awg_ftp_path', missing='error')
+    _timeout = ConfigOption('timeout', 10, missing='warn')
 
-    def __init__(self, manager, name, config, **kwargs):
-
-        state_actions = {'onactivate': self.activation,
-                         'ondeactivate': self.deactivation}
-
-        Base.__init__(self, manager, name, config, state_actions, **kwargs)
-
-        if 'awg_IP_address' in config.keys():
-            self.ip_address = config['awg_IP_address']
-        else:
-            self.logMsg('No IP address parameter "awg_IP_address" found in '
-                        'the config for the AWG7122C! Correct that!',
-                        msgType='error')
-
-        if 'awg_port' in config.keys():
-            self.port = config['awg_port']
-        else:
-            self.logMsg('No port parameter "awg_port" found in the config for '
-                        'the AWG5002C! Correct that!', msgType='error')
+    def __init__(self, config, **kwargs):
+        super().__init__(config=config, **kwargs)
 
         if 'default_sample_rate' in config.keys():
             self.sample_rate = config['default_sample_rate']
         else:
-            self.logMsg('No parameter "default_sample_rate" found in the '
-                        'config for the AWG7122C! The maximum sample rate is '
-                        'used instead.', msgType='warning')
-            self.sample_rate = self.get_constraints()['sample_rate'][1]
-
-        if 'awg_ftp_path' in config.keys():
-            self.ftp_path = config['awg_ftp_path']
-        else:
-            self.logMsg('No parameter "awg_ftp_path" found in the config for '
-                        'the AWG7122C! State the FTP folder of this device!',
-                        msgType='error')
-
-        if 'timeout' in config.keys():
-            self._timeout = config['timeout']
-        else:
-            self.logMsg('No parameter "timeout" found in the config for '
-                        'the AWG7122C! Take a default value of 10s.',
-                        msgType='error')
-            self._timeout = 10
+            self.log.warning('No parameter "default_sample_rate" found in '
+                    'the config for the AWG7122C! The maximum sample rate is '
+                    'used instead.')
+            self.sample_rate = self.get_constraints().sample_rate.max
 
         self.connected = False
 
@@ -99,42 +69,32 @@ class AWG7122C(Base, PulserInterface):
             self.pulsed_file_dir = config['pulsed_file_dir']
 
             if not os.path.exists(self.pulsed_file_dir):
-                homedir = self.get_home_dir()
+                homedir = get_home_dir()
                 self.pulsed_file_dir = os.path.join(homedir, 'pulsed_files')
-                self.logMsg('The directory defined in parameter '
-                            '"pulsed_file_dir" in the config for '
-                            'SequenceGeneratorLogic class does not exist!\n'
-                            'The default home directory\n{0}\n will be taken '
-                            'instead.'.format(self.pulsed_file_dir),
-                            msgType='warning')
+                self.log.warning('The directory defined in parameter '
+                        '"pulsed_file_dir" in the config for '
+                        'SequenceGeneratorLogic class does not exist!\n'
+                        'The default home directory\n{0}\n will be taken '
+                        'instead.'.format(self.pulsed_file_dir))
         else:
-            homedir = self.get_home_dir()
+            homedir = get_home_dir()
             self.pulsed_file_dir = os.path.join(homedir, 'pulsed_files')
-            self.logMsg('No parameter "pulsed_file_dir" was specified in the '
-                        'config for SequenceGeneratorLogic as directory for '
-                        'the pulsed files!\nThe default home directory\n{0}\n'
-                        'will be taken instead.'.format(self.pulsed_file_dir),
-                        msgType='warning')
+            self.log.warning('No parameter "pulsed_file_dir" was specified '
+                    'in the config for SequenceGeneratorLogic as directory '
+                    'for the pulsed files!\nThe default home directory\n{0}\n'
+                    'will be taken instead.'.format(self.pulsed_file_dir))
 
         self.host_waveform_directory = self._get_dir_for_name('sampled_hardware_files')
 
         # AWG7122c has possibility for sequence output
         self.sequence_mode = True
 
-        self.current_loaded_asset = None
+        self.current_loaded_asset = ''
 
         self._marker_byte_dict = {0: b'\x00', 1: b'\x01', 2: b'\x02', 3: b'\x03'}
 
-    def activation(self, e):
+    def on_activate(self):
         """ Initialisation performed during activation of the module.
-
-        @param object e: Event class object from Fysom.
-                         An object created by the state machine module Fysom,
-                         which is connected to a specific event (have a look in
-                         the Base Class). This object contains the passed event,
-                         the state before the event happened and the destination
-                         of the state which should be reached after the event
-                         had happened.
         """
 
         self.connected = True
@@ -163,11 +123,8 @@ class AWG7122C(Base, PulserInterface):
         #Set current directory on AWG
         self.tell('MMEMORY:CDIRECTORY "{0}"\n'.format(self.ftp_path+self.asset_directory))
 
-    def deactivation(self, e):
+    def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
-
-        @param object e: Event class object from Fysom. A more detailed
-                         explanation can be found in method activation.
         """
         self.connected = False
         self.soc.close()
@@ -177,163 +134,132 @@ class AWG7122C(Base, PulserInterface):
     # =========================================================================
 
     def get_constraints(self):
-        """ Retrieve the hardware constrains from the Pulsing device.
-
-        @return dict: dict with constraints for the sequence generation and GUI
-
-        Provides all the constraints (e.g. sample_rate, amplitude,
-        total_length_bins, channel_config, ...) related to the pulse generator
-        hardware to the caller.
-        The keys of the returned dictionary are the str name for the constraints
-        (which are set in this method).
-
-                    NO OTHER KEYS SHOULD BE INVENTED!
-
-        If you are not sure about the meaning, look in other hardware files to
-        get an impression. If still additional constraints are needed, then they
-        have to be added to all files containing this interface.
-
-        The items of the keys are again dictionaries which have the generic
-        dictionary form:
-            {'min': <value>,
-             'max': <value>,
-             'step': <value>,
-             'unit': '<value>'}
-
-        Only the keys 'activation_config' and differs, since it contain the
-        channel configuration/activation information.
-
-        If the constraints cannot be set in the pulsing hardware (because it
-        might e.g. has no sequence mode) then write just zero to each generic
-        dict. Note that there is a difference between float input (0.0) and
-        integer input (0).
-
-        ALL THE PRESENT KEYS OF THE CONSTRAINTS DICT MUST BE ASSIGNED!
         """
+        Retrieve the hardware constrains from the Pulsing device.
 
+        @return constraints object: object with pulser constraints as attributes.
 
-        # Todo: Set values for AWG7122c
-        constraints = {}
+        Provides all the constraints (e.g. sample_rate, amplitude, total_length_bins,
+        channel_config, ...) related to the pulse generator hardware to the caller.
 
-        # if interleave option is available, then sample rate constraints must
-        # be assigned to the output of a function called
-        # _get_sample_rate_constraints()
-        # which outputs the shown dictionary with the correct values depending
-        # on the present mode. The the GUI will have to check again the
-        # limitations if interleave was selected.
-        constraints['sample_rate'] = self._get_sample_rate_constraints()
+            SEE PulserConstraints CLASS IN pulser_interface.py FOR AVAILABLE CONSTRAINTS!!!
 
-        # The file formats are hardware specific. The sequence_generator_logic will need this
-        # information to choose the proper output format for waveform and sequence files.
-        constraints['waveform_format'] = 'wfm'
-        constraints['sequence_format'] = 'seq'
+        If you are not sure about the meaning, look in other hardware files to get an impression.
+        If still additional constraints are needed, then they have to be added to the
+        PulserConstraints class.
 
-        #checked
-        # the stepsize will be determined by the DAC in combination with the
-        # maximal output amplitude (in Vpp):
+        Each scalar parameter is an ScalarConstraints object defined in cor.util.interfaces.
+        Essentially it contains min/max values as well as min step size, default value and unit of
+        the parameter.
+
+        PulserConstraints.activation_config differs, since it contain the channel
+        configuration/activation information of the form:
+            {<descriptor_str>: <channel_list>,
+             <descriptor_str>: <channel_list>,
+             ...}
+
+        If the constraints cannot be set in the pulsing hardware (e.g. because it might have no
+        sequence mode) just leave it out so that the default is used (only zeros).
+        """
+        # Todo: Check values for AWG7122c
+        constraints = PulserConstraints()
+
+        constraints.waveform_format = ['wfm']
+        constraints.sequence_format = ['seq']
+
+        if self.interleave:
+            constraints.sample_rate.min = 12.0e9
+            constraints.sample_rate.max = 24.0e9
+            constraints.sample_rate.step = 5.0e2
+            constraints.sample_rate.default = 24.0e9
+        else:
+            constraints.sample_rate.min = 10.0e6
+            constraints.sample_rate.max = 12.0e9
+            constraints.sample_rate.step = 10.0e6
+            constraints.sample_rate.default = 12.0e9
+
+        constraints.a_ch_amplitude.max = 1.0
+        constraints.a_ch_amplitude.step = 0.001
+        constraints.a_ch_amplitude.default = 1.0
         if self.zeroing:
-            constraints['a_ch_amplitude'] = {'min': 0.25, 'max': 1.0,
-                                             'step': 0.001, 'unit': 'Vpp'}
+            constraints.a_ch_amplitude.min = 0.25
         else:
-            constraints['a_ch_amplitude'] = {'min': 0.5, 'max': 1.0,
-                                             'step': 0.001, 'unit': 'Vpp'}
-        #checked
-        constraints['a_ch_offset'] = {'min': 0.0, 'max': 0.0,
-                                      'step': 0.0, 'unit': 'V'}
+            constraints.a_ch_amplitude.min = 0.5
 
-        #checked
-        constraints['d_ch_low'] = {'min': -1.4, 'max': 0.9,
-                                   'step': 0.01, 'unit': 'V'}
+        constraints.d_ch_low.min = -1.4
+        constraints.d_ch_low.max = 0.9
+        constraints.d_ch_low.step = 0.01
+        constraints.d_ch_low.default = 0.0
 
-        #checked
-        constraints['d_ch_high'] = {'min': -0.9, 'max': 1.4,
-                                      'step': 0.01, 'unit': 'V'}
+        constraints.d_ch_high.min = -0.9
+        constraints.d_ch_high.max = 1.4
+        constraints.d_ch_high.step = 0.01
+        constraints.d_ch_high.default = 1.4
 
-        #checked
-        # for arbitrary waveform generators, this values will be used. The
-        # step value corresponds to the waveform granularity.
+        constraints.sampled_file_length.min = 1
+        constraints.sampled_file_length.step = 1
+        constraints.sampled_file_length.default = 80
         if '01' in self.AWG_options:
-            constraints['sampled_file_length'] = {'min': 1, 'max': 64.8e6,
-                                                  'step': 1, 'unit': 'Samples'}
+            constraints.sampled_file_length.max = 64800000
         else:
-            constraints['sampled_file_length'] = {'min': 1, 'max': 32e6,
-                                                  'step': 1, 'unit': 'Samples'}
+            constraints.sampled_file_length.max = 32000000
 
-        # if only digital bins can be saved, then their limitation is different
-        # compared to a waveform file
-        constraints['digital_bin_num'] = {'min': 0, 'max': 0,
-                                          'step': 0, 'unit': '#'}
+        constraints.waveform_num.min = 1
+        constraints.waveform_num.max = 32000
+        constraints.waveform_num.step = 1
+        constraints.waveform_num.default = 1
 
-        #checked
-        constraints['waveform_num'] = {'min': 1, 'max': 32000,
-                                       'step': 1, 'unit': '#'}
+        constraints.sequence_num.min = 1
+        constraints.sequence_num.max = 16000
+        constraints.sequence_num.step = 1
+        constraints.sequence_num.default = 1
 
-        #checked
-        constraints['sequence_num'] = {'min': 1, 'max': 16000,
-                                       'step': 1, 'unit': '#'}
+        constraints.subsequence_num.min = 1
+        constraints.subsequence_num.max = 8000
+        constraints.subsequence_num.step = 1
+        constraints.subsequence_num.default = 1
 
-        #TODO: Check those values: (Cannot find it) => Checked (Alex)
-        #      Can be found in the compiled html file under the section 'File and Record Format'
-        #      or search for 'subsequences'. The number here should be alright.
-        constraints['subsequence_num'] = {'min': 1, 'max': 8000,
-                                          'step': 1, 'unit': '#'}
+        # If sequencer mode is available then these should be specified
+        constraints.repetitions.min = 0
+        constraints.repetitions.max = 65539
+        constraints.repetitions.step = 1
+        constraints.repetitions.default = 0
 
-        # If sequencer mode is enable than sequence_param should be not just an
-        # empty dictionary. Insert here in the same fashion like above the parameters, which the
-        # device is needing for a creating sequences:
-        sequence_param = OrderedDict()
-        sequence_param['repetitions'] = {'min': 0, 'max': 65536, 'step': 1, 'unit': '#'}
-        sequence_param['trigger_wait'] = {'min': False, 'max': True, 'step': 1,
-                                          'unit': 'bool'}
-        sequence_param['event_jump_to'] = {'min': -1, 'max': 8000, 'step': 1,
-                                           'unit': 'row'}
-        sequence_param['go_to'] = {'min': 0, 'max': 8000, 'step': 1,
-                                   'unit': 'row'}
-        constraints['sequence_param'] = sequence_param
+        # ToDo: Check how many external triggers this device has
+        constraints.trigger_in.min = 0
+        constraints.trigger_in.max = 2
+        constraints.trigger_in.step = 1
+        constraints.trigger_in.default = 0
 
-        # the name a_ch<num> and d_ch<num> are generic names, which describe
-        # UNAMBIGUOUSLY the channels. Here all possible channel configurations
-        # are stated, where only the generic names should be used. The names
-        # for the different configurations can be customary chosen.
+        constraints.event_jump_to.min = 0
+        constraints.event_jump_to.max = 8000
+        constraints.event_jump_to.step = 1
+        constraints.event_jump_to.default = 0
 
+        constraints.go_to.min = 0
+        constraints.go_to.max = 8000
+        constraints.go_to.step = 1
+        constraints.go_to.default = 0
+
+        # the name a_ch<num> and d_ch<num> are generic names, which describe UNAMBIGUOUSLY the
+        # channels. Here all possible channel configurations are stated, where only the generic
+        # names should be used. The names for the different configurations can be customary chosen.
         activation_config = OrderedDict()
         activation_config['All'] = ['a_ch1', 'd_ch1', 'd_ch2', 'a_ch2', 'd_ch3', 'd_ch4']
         # Usage of channel 1 only:
         activation_config['A1_M1_M2'] = ['a_ch1', 'd_ch1', 'd_ch2']
         # Usage of channel 2 only:
         activation_config['A2_M3_M4'] = ['a_ch2', 'd_ch3', 'd_ch4']
-        # Usage of Interleave configuration with digital channels:
-        activation_config['Interleave_M1_M2'] = ['a_ch1', 'd_ch1', 'd_ch2']
-        # Usage of Interleave configuration only:
-        activation_config['Interleave_only'] = ['a_ch1']
-        # usage of two analog channels only:
+        # Only both analog channels
         activation_config['Two_Analog'] = ['a_ch1', 'a_ch2']
         # Usage of one analog channel without digital channel
         activation_config['Analog1'] = ['a_ch1']
         # Usage of one analog channel without digital channel
         activation_config['Analog2'] = ['a_ch2']
-
-        constraints['activation_config'] = activation_config
+        constraints.activation_config = activation_config
 
         return constraints
 
-
-    def _get_sample_rate_constraints(self):
-        """ If sample rate changes during Interleave mode, then it has to be
-            adjusted for that state.
-
-        @return dict: with keys 'min', 'max':, 'step' and 'unit' and the
-                      assigned values for that keys.
-        """
-        #checked
-        if self.interleave:
-            return {'min': 12.0e9, 'max': 24.0e9,
-                    'step': 8, 'unit': 'Samples/s'}
-        else:
-            return {'min': 10.0e6, 'max': 12.0e9,
-                    'step': 4, 'unit': 'Samples/s'}
-
-    # works!
     def pulser_on(self):
         """ Switches the pulsing device on.
 
@@ -341,12 +267,9 @@ class AWG7122C(Base, PulserInterface):
                                  current status of the device. Check then the
                                  class variable status_dic.)
         """
-
         self.tell('AWGC:RUN\n')
-
         return self.get_status()[0]
 
-    # works!
     def pulser_off(self):
         """ Switches the pulsing device off.
 
@@ -355,7 +278,6 @@ class AWG7122C(Base, PulserInterface):
                                  class variable status_dic.)
         """
         self.tell('AWGC:STOP\n')
-
         return self.get_status()[0]
 
     # TODO: works, but is this hardcoded ch2 really a good idea?
@@ -372,8 +294,8 @@ class AWG7122C(Base, PulserInterface):
         """
 
         if asset_name is None:
-            self.logMsg('No asset name provided for upload!\nCorrect '
-                        'that!\nCommand will be ignored.', msgType='warning')
+            self.log.warning('No asset name provided for upload!\nCorrect that!\n'
+                             'Command will be ignored.')
             return -1
 
         # at first delete all the name, which might lead to confusions in the
@@ -415,10 +337,9 @@ class AWG7122C(Base, PulserInterface):
             ftp.cwd(self.asset_directory)
             with open(filepath, 'rb') as uploaded_file:
                 ftp.storbinary('STOR '+filename, uploaded_file)
-        pass
+        return
 
-    #TODO: That should actually 'just' load the channels into the AWG and not upload to the device.
-    def load_asset(self, asset_name, load_dict={}):
+    def load_asset(self, asset_name, load_dict=None):
         """ Loads a sequence or waveform to the specified channel of the pulsing
             device.
 
@@ -440,17 +361,22 @@ class AWG7122C(Base, PulserInterface):
         Unused for digital pulse generators without sequence storage capability
         (PulseBlaster, FPGA).
         """
+        if load_dict is None:
+            load_dict = {}
         path = self.ftp_path + self.get_asset_dir_on_device()
 
         # Find all files associated with the specified asset name
         file_list = self._get_filenames_on_device()
         filename = []
 
+        # Get current channel activation state to be restored after loading the asset
+        chnl_activation = self.get_active_channels()
+
         if (asset_name + '.seq') in file_list:
             file_name = asset_name + '.seq'
 
             # self.tell('MMEMORY:IMPORT "{0}","{1}",SEQ \n'.format(asset_name , asset_name + '.seq'))
-            self.tell('SOUR1:FUNC:USER "%s/%s"\n' % (path, file_name))
+            self.tell('SOUR1:FUNC:USER "{0!s}/{1!s}"\n'.format(path, file_name))
             # self.tell('SOUR1:FUNC:USER "{0}/{1}"\n'.format(path, file_name))
             # set the AWG to the event jump mode:
             self.tell('AWGCONTROL:EVENT:JMODE EJUMP')
@@ -465,27 +391,28 @@ class AWG7122C(Base, PulserInterface):
                     self.tell('MMEMORY:IMPORT "{0}","{1}",WFM \n'.format(asset_name +'_ch1', asset_name + '_ch1.wfm'))
                     #load into channel
                     self.tell('SOUR1:WAVEFORM "{0}"\n'.format(asset_name + '_ch1'))
-                    print("Ch1 loaded",asset_name)
+                    self.log.debug('Ch1 loaded: "{0}"'.format(asset_name))
                     filename.append(file)
                 elif file == asset_name + '_ch2.wfm':
                     self.tell('MMEMORY:IMPORT "{0}","{1}",WFM \n'.format(asset_name + '_ch2', asset_name + '_ch2.wfm'))
                     self.tell('SOUR2:WAVEFORM "{0}"\n'.format(asset_name + '_ch2'))
-                    print("Ch2 loaded",asset_name)
+                    self.log.debug('Ch2 loaded: "{0}"'.format(asset_name))
                     filename.append(file)
 
             if load_dict == {} and filename == []:
-                self.logMsg('No file and channel provided for load!\nCorrect '
-                            'that!\nCommand will be ignored.', msgType='warning')
+                self.log.warning('No file and channel provided for load!\nCorrect that!\n'
+                                 'Command will be ignored.')
 
-        for channel_num in list(load_dict):
-            print("in load dict")
+        # for channel_num in list(load_dict):
             #asset_name = str(load_dict[channel_num])
             #self.tell('MMEMORY:IMPORT "{0}","{1}",WFM \n'.format(asset_name + '_ch{0}'.format(int(channel_num)), asset_name + '_ch{0}.wfm'.format(int(channel_num))))
             #self.tell('SOUR1:WAVEFORM "{0}"\n'.format(asset_name + '_ch{0}'.format(int(channel_num))))
 
-        if len(list(load_dict)) > 0:
-            self.current_loaded_asset = asset_name
+        #if len(list(load_dict)) > 0:
+        self.current_loaded_asset = asset_name
 
+        # Restore channel activation state
+        self.set_active_channels(chnl_activation)
         return 0
 
 
@@ -500,9 +427,9 @@ class AWG7122C(Base, PulserInterface):
         #
         # # Check if something could be found
         # if len(filename) == 0:
-        #     self.logMsg('No files associated with asset {0} were found on AWG7122c.'
-        #                 'Load to channels failed!'.format(asset_name),
-        #                 msgType='error')        #         if asset.split("_")[-1][:3] == 'ch1':
+        #     self.log.error('No files associated with asset {0} were found on AWG7122c.'
+        #                 'Load to channels failed!'.format(asset_name)
+        #                 )        #         if asset.split("_")[-1][:3] == 'ch1':
         #             self.tell('SOUR1:WAVEFORM "{0}"\n'.format(asset[:-4]))
         #         if asset.split("_")[-1][:3] == 'ch2':
         #             self.tell('SOUR2:WAVEFORM "{0}"\n'.format(asset[:-4]))
@@ -511,16 +438,16 @@ class AWG7122C(Base, PulserInterface):
         #     for channel in load_dict:
         #     return -1
         #
-        # self.logMsg('The following files associated with the asset {0} were found on AWG7122c:\n'
-        #             '"{1}"'.format(asset_name, filename), msgType='status')
+        # self.log.info('The following files associated with the asset {0} were found on AWG7122c:\n'
+        #             '"{1}"'.format(asset_name, filename))
         #
         # # load files in AWG Waveform list
         # for asset in filename:
         #     if asset.endswith('.wfm'):
         #         self.tell('MMEMORY:IMPORT "{0}","{1}",WFM \n'.format(asset[:-4], asset))
         #     else:
-        #         self.logMsg('Could not load asset {0} to AWG7122c:\n'
-        #             '"{1}"'.format(asset_name, filename), msgType='error')
+        #         self.log.error('Could not load asset {0} to AWG7122c:\n'
+        #             '"{1}"'.format(asset_name, filename))
         #
         # file_path = self.ftp_path + self.get_asset_dir_on_device()
         # # simply use the channel association of the filenames if no load_dict is given
@@ -555,7 +482,7 @@ class AWG7122C(Base, PulserInterface):
 
 
         self.tell('WLIST:WAVEFORM:DELETE ALL\n')
-        self.current_loaded_asset = None
+        self.current_loaded_asset = ''
         return
 
     # works!
@@ -625,7 +552,7 @@ class AWG7122C(Base, PulserInterface):
         return self.sample_rate
 
 
-    def get_analog_level(self, amplitude=[], offset=[]):
+    def get_analog_level(self, amplitude=None, offset=None):
         """ Retrieve the analog amplitude and offset of the provided channels.
 
         @param list amplitude: optional, if a specific amplitude value (in Volt
@@ -653,9 +580,14 @@ class AWG7122C(Base, PulserInterface):
         levels are defined by an amplitude (here total signal span, denoted in
         Voltage peak to peak) and an offset (denoted by an (absolute) voltage).
         """
+        if amplitude is None:
+            amplitude = []
+        if offset is None:
+            offset = []
 
         amp = {}
         off = {}
+        # FIXME: No sanity checking done here with constraints
         constraints = self.get_constraints()
 
         if (amplitude == []) and (offset == []):
@@ -672,9 +604,7 @@ class AWG7122C(Base, PulserInterface):
             else:
                 off['a_ch1'] = float(self.ask('SOURCE1:VOLTAGE:OFFSET?'))
                 off['a_ch2'] = float(self.ask('SOURCE2:VOLTAGE:OFFSET?'))
-
         else:
-
             #FIXME: include the check for interleave channel and obtain also for
             #       that channel the proper amplitude and offset
             #       Remember channelnumbers were defined like
@@ -683,33 +613,29 @@ class AWG7122C(Base, PulserInterface):
             #           ACH2       = 3
             #       for analog channels.
             for a_ch in amplitude:
-                if (a_ch <= self._get_num_a_ch()) and \
-                   (a_ch >= 0):
+                if 0 <= a_ch <= self._get_num_a_ch():
                     amp[a_ch] = float(self.ask('SOURCE{0}:VOLTAGE:AMPLITUDE?'.format(a_ch)))
                 else:
-                    self.logMsg('The device does not have that much analog '
-                                'channels! A channel number "{0}" was passed, '
-                                'but only "{1}" channels are available!\n'
-                                'Command will be ignored.'.format(a_ch,
-                                                                  self._get_num_a_ch()),
-                            msgType='warning')
+                    self.log.warning('The device does not have that many '
+                        'analog channels! A channel number "{0}" was '
+                        'passed, but only "{1}" channels are available!\n'
+                        'Command will be ignored.'
+                        ''.format(a_ch, self._get_num_a_ch()))
 
             for a_ch in offset:
-                if (a_ch <= self._get_num_a_ch()) and \
-                   (a_ch >= 0):
+                if 0 <= a_ch <= self._get_num_a_ch():
                     off[a_ch] = float(self.ask('SOURCE{0}:VOLTAGE:OFFSET?'.format(a_ch)))
                 else:
-                    self.logMsg('The device does not have that much analog '
-                                'channels! A channel number "{0}" was passed, '
-                                'but only "{1}" channels are available!\n'
-                                'Command will be ignored.'.format(a_ch,
-                                                                  self._get_num_a_ch()),
-                            msgType='warning')
+                    self.log.warning('The device does not have that much '
+                        'analog channels! A channel number "{0}" was '
+                        'passed, but only "{1}" channels are available!\n'
+                        'Command will be ignored.'
+                        ''.format(a_ch, self._get_num_a_ch()))
 
         return amp, off
 
 
-    def set_analog_level(self, amplitude={}, offset={}):
+    def set_analog_level(self, amplitude=None, offset=None):
         """ Set amplitude and/or offset value of the provided analog channel.
 
         @param dict amplitude: dictionary, with key being the channel and items
@@ -730,76 +656,105 @@ class AWG7122C(Base, PulserInterface):
         In general there is not a bijective correspondence between
         (amplitude, offset) for analog and (value high, value low) for digital!
         """
+        # Check the inputs by using the constraints...
+        constraints = self.get_constraints()
+        # ...and the channel numbers
+        num_of_channels = self._get_num_a_ch()
 
+        # amplitude sanity check
+        pattern = re.compile('[0-9]+')
+        if amplitude is not None:
+            for chnl in amplitude:
+                ch_num = int(re.search(pattern, chnl).group(0))
+                if ch_num > num_of_channels or ch_num < 1:
+                    self.log.warning('Channel to set (a_ch{0}) not available in AWG.\nSetting '
+                                     'analogue voltage for this channel ignored.'.format(chnl))
+                    del amplitude[chnl]
+                if amplitude[chnl] < constraints.a_ch_amplitude.min:
+                    self.log.warning('Minimum Vpp for channel "{0}" is {1}. Requested Vpp of {2}V '
+                                     'was ignored and instead set to min value.'
+                                     ''.format(chnl, constraints.a_ch_amplitude.min,
+                                               amplitude[chnl]))
+                    amplitude[chnl] = constraints.a_ch_amplitude.min
+                elif amplitude[chnl] > constraints.a_ch_amplitude.max:
+                    self.log.warning('Maximum Vpp for channel "{0}" is {1}. Requested Vpp of {2}V '
+                                     'was ignored and instead set to max value.'
+                                     ''.format(chnl, constraints.a_ch_amplitude.max,
+                                               amplitude[chnl]))
+                    amplitude[chnl] = constraints.a_ch_amplitude.max
+        # offset sanity check
+        if offset is not None:
+            for chnl in offset:
+                ch_num = int(re.search(pattern, chnl).group(0))
+                if ch_num > num_of_channels or ch_num < 1:
+                    self.log.warning('Channel to set (a_ch{0}) not available in AWG.\nSetting '
+                                     'offset voltage for this channel ignored.'.format(chnl))
+                    del offset[chnl]
+                if offset[chnl] < constraints.a_ch_offset.min:
+                    self.log.warning('Minimum offset for channel "{0}" is {1}. Requested offset of '
+                                     '{2}V was ignored and instead set to min value.'
+                                     ''.format(chnl, constraints.a_ch_offset.min, offset[chnl]))
+                    offset[chnl] = constraints.a_ch_offset.min
+                elif offset[chnl] > constraints.a_ch_offset.max:
+                    self.log.warning('Maximum offset for channel "{0}" is {1}. Requested offset of '
+                                     '{2}V was ignored and instead set to max value.'
+                                     ''.format(chnl, constraints.a_ch_offset.max, offset[chnl]))
+                    offset[chnl] = constraints.a_ch_offset.max
+
+        if amplitude is not None:
+            for a_ch in amplitude:
+                ch_num = int(re.search(pattern, a_ch).group(0))
+                self.tell('SOURCE{0}:VOLTAGE:AMPLITUDE {1}'.format(ch_num, amplitude[a_ch]))
+            while int(self.ask('*OPC?\n')) != 1:
+                time.sleep(1)
+
+        if offset is not None:
+            for a_ch in offset:
+                ch_num = int(re.search(pattern, a_ch).group(0))
+                self.tell('SOURCE{0}:VOLTAGE:OFFSET {1}'.format(ch_num, offset[a_ch]))
+            while int(self.ask('*OPC?\n')) != 1:
+                time.sleep(1)
+
+        return self.get_analog_level()
+
+    def set_digital_level(self, low=None, high=None):
+        """ Set low and/or high value of the provided digital channel.
+
+        @param dict low: dictionary, with key being the channel and items being
+                         the low values (in volt) for the desired channel.
+        @param dict high: dictionary, with key being the channel and items being
+                         the high values (in volt) for the desired channel.
+
+        If nothing is passed then the command is being ignored.
+
+        Note, the major difference to analog signals is that digital signals are
+        either ON or OFF, whereas analog channels have a varying amplitude
+        range. In contrast to analog output levels, digital output levels are
+        defined by a voltage, which corresponds to the ON status and a voltage
+        which corresponds to the OFF status (both denoted in (absolute) voltage)
+
+        In general there is not a bijective correspondence between
+        (amplitude, offset) for analog and (value high, value low) for digital!
+        """
+        if low is None:
+            low = {}
+        if high is None:
+            high = {}
+
+        #FIXME: No sanity checks with constraints done here
         constraints = self.get_constraints()
 
-        #FIXME: include the check for interleave channel and obtain also for
-        #       that channel the proper amplitude and offset
-        #       Remember channelnumbers were defined like
-        #           Interleave = 1
-        #           ACH1       = 2
-        #           ACH2       = 3
-        #       for analog channels.
+        for d_ch in low:
+            #FIXME: Tell the device the proper digital voltage low value:
+            # self.tell('SOURCE1:MARKER{0}:VOLTAGE:LOW {1}'.format(d_ch, low[d_ch]))
+            pass
 
-        for a_ch in amplitude:
-            if (a_ch <= self._get_num_a_ch()) and \
-               (a_ch >= 0):
+        for d_ch in high:
+            #FIXME: Tell the device the proper digital voltage high value:
+            # self.tell('SOURCE1:MARKER{0}:VOLTAGE:HIGH {1}'.format(d_ch, high[d_ch]))
+            pass
 
-                if amplitude[a_ch] < constraints['a_ch_amplitude']['min'] or \
-                   amplitude[a_ch] > constraints['a_ch_amplitude']['max']:
-
-                    self.logMsg('Not possible to set for analog channel {0} '
-                                'the amplitude value {1}Vpp, since it is not '
-                                'within the interval [{2},{3}]! Command will '
-                                'be ignored.'.format(a_ch,
-                                                     amplitude[a_ch],
-                                                     constraints['a_ch_amplitude']['min'],
-                                                     constraints['a_ch_amplitude']['max']),
-                                msgType='warning')
-                else:
-
-                    self.tell('SOURCE{0}:VOLTAGE:AMPLITUDE {1}'.format(a_ch,
-                                                                       amplitude[a_ch]))
-
-
-            else:
-                self.logMsg('The device does not support that much analog '
-                            'channels! A channel number "{0}" was passed, but '
-                            'only "{1}" channels are available!\nCommand will '
-                            'be ignored.'.format(a_ch,
-                                                 self._get_num_a_ch()),
-                            msgType='warning')
-
-        for a_ch in offset:
-            if (a_ch <= self._get_num_a_ch()) and \
-               (a_ch >= 0):
-
-                if offset[a_ch] < constraints['a_ch_offset']['min'] or \
-                   offset[a_ch] > constraints['a_ch_offset']['max']:
-
-                    self.logMsg('Not possible to set for analog channel {0} '
-                                'the offset value {1}V, since it is not '
-                                'within the interval [{2},{3}]! Command will '
-                                'be ignored.'.format(a_ch,
-                                                     offset[a_ch],
-                                                     constraints['a_ch_offset']['min'],
-                                                     constraints['a_ch_offset']['max']),
-                                msgType='warning')
-                else:
-                    self.tell('SOURCE{0}:VOLTAGE:OFFSET {1}'.format(a_ch,
-                                                                    offset[a_ch]))
-
-            else:
-                self.logMsg('The device does not support that much analog '
-                            'channels! A channel number "{0}" was passed, but '
-                            'only "{1}" channels are available!\nCommand will '
-                            'be ignored.'.format(a_ch,
-                                                 self._get_num_a_ch()),
-                            msgType='warning')
-
-        return self.get_analog_level(amplitude=list(amplitude), offset=list(offset))
-
-    def get_digital_level(self, low=[], high=[]):
+    def get_digital_level(self, low=None, high=None):
         """ Retrieve the digital low and high level of the provided channels.
 
         @param list low: optional, if a specific low value (in Volt) of a
@@ -829,10 +784,15 @@ class AWG7122C(Base, PulserInterface):
         In general there is not a bijective correspondence between
         (amplitude, offset) for analog and (value high, value low) for digital!
         """
+        if low is None:
+            low = []
+        if high is None:
+            high = []
 
         low_val = {}
         high_val = {}
 
+        # FIXME: No sanity checks with constraints done here.
         constraints = self.get_constraints()
 
         if (low == []) and (high == []):
@@ -847,51 +807,41 @@ class AWG7122C(Base, PulserInterface):
             high_val[4] = float(self.ask('SOURCE2:MARKER2:VOLTAGE:HIGH?'))
 
         else:
-
             for d_ch in low:
-                if (d_ch <= self._get_num_d_ch()) and \
-                   (d_ch >= 0):
-
+                if 0 <= d_ch <= self._get_num_d_ch():
                     # a fast way to map from a channel list [1, 2, 3, 4] to  a
                     # list like [[1,2], [1,2]]:
                     if (d_ch-2) <= 0:
                         # the conversion to integer is just for safety.
                         low_val[d_ch] = float(self.ask('SOURCE1:MARKER{0}:VOLTAGE:LOW?'.format(int(d_ch))))
-
                     else:
                         low_val[d_ch] = float(self.ask('SOURCE2:MARKER{0}:VOLTAGE:LOW?'.format(int(d_ch-2))))
                 else:
-                    self.logMsg('The device does not have that much digital '
-                                'channels! A channel number "{0}" was passed, '
-                                'but only "{1}" channels are available!\n'
-                                'Command will be ignored.'.format(d_ch,
-                                                                  self._get_num_d_ch()),
-                                msgType='warning')
+                    self.log.warning('The device does not have that much '
+                        'digital channels! A channel number "{0}" was '
+                        'passed, but only "{1}" channels are available!\n'
+                        'Command will be ignored.'
+                        ''.format(d_ch, self._get_num_d_ch()))
 
             for d_ch in high:
-
-                if (d_ch <= self._get_num_d_ch()) and \
-                   (d_ch >= 0):
-
+                if 0 <= d_ch <= self._get_num_d_ch():
                     # a fast way to map from a channel list [1, 2, 3, 4] to  a
                     # list like [[1,2], [1,2]]:
                     if (d_ch-2) <= 0:
                         # the conversion to integer is just for safety.
                         high_val[d_ch] = float(self.ask('SOURCE1:MARKER{0}:VOLTAGE:HIGH?'.format(int(d_ch))))
-
                     else:
                         high_val[d_ch] = float(self.ask('SOURCE2:MARKER{0}:VOLTAGE:HIGH?'.format(int(d_ch-2))))
                 else:
-                    self.logMsg('The device does not have that much digital '
-                                'channels! A channel number "{0}" was passed, '
-                                'but only "{1}" channels are available!\n'
-                                'Command will be ignored.'.format(d_ch,
-                                                                  self._get_num_d_ch()),
-                                msgType='warning')
+                    self.log.warning('The device does not have that much '
+                        'digital channels! A channel number "{0}" was '
+                        'passed, but only "{1}" channels are available!\n'
+                        'Command will be ignored.'
+                        ''.format(d_ch, self._get_num_d_ch()))
 
         return low_val, high_val
 
-    def get_active_channels(self, ch=[]):
+    def get_active_channels(self, ch=None):
         """ Get the active channels of the pulse generator hardware.
 
         @param list ch: optional, if specific analog or digital channels are
@@ -908,15 +858,12 @@ class AWG7122C(Base, PulserInterface):
         If no parameters are passed to this method all channels will be asked
         for their setting.
         """
-
         active_ch = {}
 
-        if ch == []:
-            #FIXME: check the output of the interleave
-            active_ch['a_ch1'] = True
+        if ch is None:
             # because 0 = False and 1 = True
-            active_ch['a_ch2'] = bool(int(self.ask('OUTPUT1:STATE?')))
-            active_ch['a_ch3'] = bool(int(self.ask('OUTPUT2:STATE?')))
+            active_ch['a_ch1'] = bool(int(float(self.ask('OUTPUT1:STATE?'))))
+            active_ch['a_ch2'] = bool(int(float(self.ask('OUTPUT2:STATE?'))))
 
             # For the AWG5000 series, the resolution of the DAC for the analog
             # channel is fixed to 14bit. Therefore the digital channels are
@@ -925,63 +872,41 @@ class AWG7122C(Base, PulserInterface):
             #   self.ask('SOURCE1:DAC:RESOLUTION?'))
             # might be useful from which the active digital channels can be
             # obtained.
-            active_ch['d_ch1'] = False
-            active_ch['d_ch2'] = False
-            active_ch['d_ch3'] = False
-            active_ch['d_ch4'] = False
-
-
-
+            active_ch['d_ch1'] = active_ch['a_ch1']
+            active_ch['d_ch2'] = active_ch['a_ch1']
+            active_ch['d_ch3'] = active_ch['a_ch2']
+            active_ch['d_ch4'] = active_ch['a_ch2']
         else:
             for channel in ch:
-
                 if 'a_ch' in channel:
-
                     ana_chan = int(channel[4:])
-
-                    if (ana_chan <= self._get_num_a_ch()) and \
-                            (ana_chan >= 0):
-
+                    if 0 < ana_chan <= self._get_num_a_ch():
                         # because 0 = False and 1 = True
-
-                        if ana_chan == 1:
-
-                            #FIXME: check for interleave output turned on
-                            active_ch[channel] = bool(int(self.ask('OUTPUT{0}:STATE?'.format(ana_chan))))
-
-                        else:
-
-                            active_ch[channel] = bool(int(self.ask('OUTPUT{0}:STATE?'.format(ana_chan-1))))
-
+                        active_ch[channel] = bool(int(float(self.ask('OUTPUT{0}:STATE?'.format(ana_chan)))))
                     else:
-                        self.logMsg('The device does not support that much analog '
-                                    'channels! A channel number "{0}" was passed, '
-                                    'but only "{1}" channels are available!\n'
-                                    'Command will be ignored.'.format(ana_chan,
-                                                                      self._get_num_a_ch()),
-                                    msgType='warning')
+                        self.log.warning('The device does not support that '
+                            'many analog channels! A channel number '
+                            '"{0}" was passed, but only "{1}" channels are available!\n'
+                            'Command will be ignored.'
+                            ''.format(ana_chan, self._get_num_a_ch()))
+
                 elif 'd_ch' in channel:
-
                     digi_chan = int(channel[4:])
-
-                    if (digi_chan <= self._get_num_d_ch()) and \
-                            (digi_chan >= 0):
-
-                        active_ch[channel] = False
-
-
-
+                    if 0 < digi_chan <= self._get_num_d_ch():
+                        if digi_chan == 1 or digi_chan == 2:
+                            active_ch[channel] = bool(int(float(self.ask('OUTPUT1:STATE?'))))
+                        elif digi_chan == 3 or digi_chan == 4:
+                            active_ch[channel] = bool(int(float(self.ask('OUTPUT2:STATE?'))))
                     else:
-                        self.logMsg('The device does not support that much digital '
-                                    'channels! A channel number "{0}" was passed, '
-                                    'but only "{1}" channels are available!\n'
-                                    'Command will be ignored.'.format(digi_chan,
-                                                                      self._get_num_d_ch()),
-                                    msgType='warning')
-
+                        self.log.warning('The device does not support that '
+                                'many digital channels! A channel number '
+                                '"{0}" was passed, but only "{1}" channels '
+                                'are available!\n'
+                                'Command will be ignored.'
+                                ''.format(digi_chan, self._get_num_d_ch()))
         return active_ch
 
-    def set_active_channels(self, ch={}):
+    def set_active_channels(self, ch=None):
         """ Set the active channels for the pulse generator hardware.
 
         @param dict ch: dictionary with keys being the analog or digital
@@ -1010,55 +935,20 @@ class AWG7122C(Base, PulserInterface):
         other devices the deactivation of digital channels increase the DAC
         resolution of the analog channels.
         """
+        if ch is None:
+            return self.get_active_channels()
 
         for channel in ch:
-
             chan = int(channel[4:])
-
             if 'a_ch' in channel:
-
-                if (chan <= self._get_num_a_ch()) and \
-                        (chan >= 0):
-
+                if 0 < chan <= self._get_num_a_ch():
                     if ch[channel]:
                         state = 'ON'
                     else:
                         state = 'OFF'
-
-                    #FIXME: make a proper check for interleave channel
-                    if chan == 1:
-                        self.tell('OUTPUT{0}:STATE {1}'.format(chan, state))
-                    else:
-                        self.tell('OUTPUT{0}:STATE {1}'.format(chan-1, state))
-            else:
-
-                # self.logMsg('The device does not support that much analog '
-                #             'channels! A channel number "{0}" was passed, but '
-                #             'only "{1}" channels are available!\nCommand will '
-                #             'be ignored.'.format(chan,
-                #                                  self._get_num_a_ch()),
-                #             msgType='warning')
-
-                # adjust the DAC resolution accordingly
-                # if ch[channel]:
-                #     self.tell('SOURCE1:DAC:RESOLUTION ' + str(10 - chan) + '\n')
-                #     self.tell('SOURCE2:DAC:RESOLUTION ' + str(10 - chan) + '\n')
-                if ch[channel]:
-                    state = 'ON'
-                else:
-                    state = 'OFF'
-
-                if chan == 1:
                     self.tell('OUTPUT{0}:STATE {1}'.format(chan, state))
-                else:
-                    self.tell('OUTPUT{0}:STATE {1}'.format(chan - 1, state))
 
-        # if d_ch != {}:
-        #     self.logMsg('Digital Channel of the AWG5000 series will always be '
-        #                 'active. This configuration cannot be changed.',
-        #                 msgType='status')
-
-        return self.get_active_channels(ch=list(ch))
+        return self.get_active_channels()
 
 
     def get_uploaded_asset_names(self):
@@ -1157,8 +1047,8 @@ class AWG7122C(Base, PulserInterface):
             try:
                 ftp.cwd(dir_path)
             except:
-                self.logMsg('Desired directory {0} not found on AWG device.\n'
-                            'Create new.'.format(dir_path), msgType='status')
+                self.log.info('Desired directory {0} not found on AWG device.\n'
+                        'Create new.'.format(dir_path))
                 ftp.mkd(dir_path)
 
         self.asset_directory = dir_path
@@ -1191,14 +1081,17 @@ class AWG7122C(Base, PulserInterface):
         @return bool state: State of interleave by using get_interleave()
 
         """
+        # if the interleave state should not be changed from the current state, do nothing.
+        self.interleave = self.get_interleave()
+        if self.interleave == state:
+            return self.interleave
 
         if state == False:
             self.tell('AWGControl:INTerleave:STAT 0\n')
         elif state == True:
             self.tell('AWGControl:INTerleave:STAT 1\n')
         else:
-            self.logMsg('Interleave mode can not be set to desired state!\n'
-                        , msgType='warning')
+            self.log.warning('Interleave mode cannot be set to desired state!')
 
         return self.get_interleave()
 
@@ -1220,8 +1113,7 @@ class AWG7122C(Base, PulserInterface):
             self.interleave=False
             return False
         else:
-            self.logMsg('State of interleave mode neither 1 nor 0. Returning false.\n',
-                        msgType='warning')
+            self.log.warning('State of interleave mode neither 1 nor 0. Returning false.')
             return None
 
     # works
@@ -1263,11 +1155,10 @@ class AWG7122C(Base, PulserInterface):
             message = self.soc.recv(self.input_buffer)  # receive an answer
             message = message.decode('UTF-8')  # decode bytes into a python str
         except OSError:
-            self.logMsg('Most propably timeout was reached during querying '
-                        'the AWG7122 Series device with the question:\n'
-                        '{0}\n'
-                        'The question text must be wrong.'.format(question),
-                        msgType='error')
+            self.log.error('Most propably timeout was reached during '
+                    'querying the AWG7122 Series device with the question:\n'
+                    '{0}\n'
+                    'The question text must be wrong.'.format(question))
             message = str(-1)
 
         message = message.replace('\n', '')  # cut away the characters\r and \n.
@@ -1328,14 +1219,13 @@ class AWG7122C(Base, PulserInterface):
                             sequence   - 'S'
 
         """
-
         look_up = {'C': 'CONT',
                    'T': 'TRIG',
                    'G': 'GAT',
                    'E': 'ENH',
                    'S': 'SEQ'
                    }
-        self.tell('AWGC:RMOD %s\n' % look_up[mode.upper()])
+        self.tell('AWGC:RMOD {0!s}\n'.format(look_up[mode.upper()]))
 
     # works
     def get_sequencer_mode(self, output_as_int=False):
@@ -1434,7 +1324,7 @@ class AWG7122C(Base, PulserInterface):
 
         @return int: number of analog channels.
         """
-        config = self.get_constraints()['activation_config']
+        config = self.get_constraints().activation_config
 
         all_a_ch = []
         for conf in config:
@@ -1455,7 +1345,7 @@ class AWG7122C(Base, PulserInterface):
 
         @return int: number of digital channels.
         """
-        config = self.get_constraints()['activation_config']
+        config = self.get_constraints().activation_config
 
         all_d_ch = []
         for conf in config:

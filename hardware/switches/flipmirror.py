@@ -2,18 +2,18 @@
 """
 Control the Radiant Dyes flip mirror driver through the serial interface.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
@@ -21,9 +21,10 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 
 import visa
 import time
-from core.base import Base
+from core.module import Base, ConfigOption
 from core.util.mutex import Mutex
 from interface.switch_interface import SwitchInterface
+
 
 class FlipMirror(Base, SwitchInterface):
     """ This class is implements communication with the Radiant Dyes flip mirror driver
@@ -31,33 +32,26 @@ class FlipMirror(Base, SwitchInterface):
     """
     _modclass = 'switchinterface'
     _modtype = 'hardware'
-    _out = {'switch':'SwitchInterface'}
 
-    def __init__(self, manager, name, config, **kwargs):
-        """ Creae flip mirror control module 
+    serial_interface = ConfigOption('interface', 'ASRL1::INSTR', missing='warn')
+
+    def __init__(self, config, **kwargs):
+        """ Creae flip mirror control module
 
           @param object manager: reference to module manager
           @param str name: unique module name
           @param dict config; configuration parameters in a dict
           @param dict kwargs: aditional parameters in a dict
         """
-        c_dict = {'onactivate': self.activation, 'ondeactivate': self.deactivation}
-        Base.__init__(self, manager, name, config, c_dict)
+        super().__init__(config=config, **kwargs)
         self.lock = Mutex()
-        print(config)
-        print(self._configuration)
 
-    def activation(self, e):
+    def on_activate(self):
         """ Prepare module, connect to hardware.
-
-          @param e: Fysom stae change notification.
         """
-        config = self.getConfiguration()
-        if not 'interface' in config:
-            raise KeyError('{0} definitely needs an "interface" configuration value.'.format(self.__class__.__name__))
         self.rm = visa.ResourceManager()
         self.inst = self.rm.open_resource(
-                config['interface'],
+                self.serial_interface,
                 baud_rate=115200,
                 write_termination='\r\n',
                 read_termination='\r\n',
@@ -65,10 +59,8 @@ class FlipMirror(Base, SwitchInterface):
                 send_end=True
         )
 
-    def deactivation(self, e):
+    def on_deactivate(self):
         """ Disconnect from hardware on deactivation.
-
-          @param e: Fysom stae change notification.
         """
         self.inst.close()
         self.rm.close()
@@ -150,11 +142,12 @@ class FlipMirror(Base, SwitchInterface):
                 if answer != 'OK1':
                     return False
                 time.sleep(self.getSwitchTime(switchNumber))
-                self.logMsg('{0} switch {1}: On'.format(self._name, switchNumber))
+                self.log.info('{0} switch {1}: On'.format(
+                    self._name, switchNumber))
             except:
                 return False
             return True
-    
+
     def switchOff(self, switchNumber):
         """ Turn the flip mirror to horizontal position.
 
@@ -168,7 +161,8 @@ class FlipMirror(Base, SwitchInterface):
                 if answer != 'OK1':
                     return False
                 time.sleep(self.getSwitchTime(switchNumber))
-                self.logMsg('{0} switch {1}: Off'.format(self._name, switchNumber))
+                self.log.info('{0} switch {1}: Off'.format(
+                    self._name, switchNumber))
             except:
                 return False
             return True

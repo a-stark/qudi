@@ -5,31 +5,31 @@ This module contains a POI Manager core class which gives capability to mark
 points of interest, re-optimise their position, and keep track of sample drift
 over time.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-from pyqtgraph.Qt import QtGui, QtCore
+from qtpy import QtCore
 import ctypes   # is a foreign function library for Python. It provides C
                 # compatible data types, and allows calling functions in DLLs
                 # or shared libraries. It can be used to wrap these libraries
                 # in pure Python.
 
 from interface.wavemeter_interface import WavemeterInterface
-from core.base import Base
+from core.module import Base, ConfigOption
 from core.util.mutex import Mutex
 
 
@@ -65,7 +65,7 @@ class HardwarePull(QtCore.QObject):
         """
 
         # update as long as the state is busy
-        if self._parentclass.getState() == 'running':
+        if self._parentclass.module_state() == 'running':
             # get the current wavelength from the wavemeter
             temp1=float(self._parentclass._wavemeterdll.GetWavelength(0))
             temp2=float(self._parentclass._wavemeterdll.GetWavelength(0))
@@ -80,9 +80,10 @@ class HighFinesseWavemeter(Base,WavemeterInterface):
     _modclass = 'HighFinesseWavemeter'
     _modtype = 'hardware'
 
-    ## declare connectors
-    _out = {'highfinessewavemeter': 'WavemeterInterface'}
+    # config options
+    _measurement_timing = ConfigOption('measurement_timing', 10.)
 
+    # signals
     sig_handle_timer = QtCore.Signal(bool)
 
     #############################################
@@ -97,28 +98,18 @@ class HighFinesseWavemeter(Base,WavemeterInterface):
     _cReturnWavelangthVac        = ctypes.c_long(0x0000)
 
 
-    def __init__(self, manager, name, config = {}, **kwargs):
-        c_dict = {'onactivate': self.activation, 'ondeactivate': self.deactivation}
-        Base.__init__(self, manager, name, configuration=config, callbacks = c_dict, **kwargs)
+    def __init__(self, config, **kwargs):
+        super().__init__(config=config, **kwargs)
 
         #locking for thread safety
         self.threadlock = Mutex()
 
         # the current wavelength read by the wavemeter in nm (vac)
-        self._current_wavelength=0.0
-        self._current_wavelength2=0.0
-
-        # time between two measurement points of the wavemeter in milliseconds
-        if 'measurement_timing' in config.keys():
-            self._measurement_timing=config['measurement_timing']
-        else:
-            self._measurement_timing = 10.
-            self.logMsg('No measurement_timing configured, '\
-                        'using {} instead.'.format(self._measurement_timing),
-                        msgType='warning')
+        self._current_wavelength = 0.0
+        self._current_wavelength2 = 0.0
 
 
-    def activation(self, e):
+    def on_activate(self):
         #############################################
         # Initialisation to access external DLL
         #############################################
@@ -127,8 +118,9 @@ class HighFinesseWavemeter(Base,WavemeterInterface):
             self._wavemeterdll = ctypes.windll.LoadLibrary('wlmData.dll')
 
         except:
-            self.logMsg('There is no Wavemeter installed on this Computer.\n Please install a High Finesse Wavemeter and try again.',
-                    msgType='error')
+            self.log.critical('There is no Wavemeter installed on this '
+                    'Computer.\nPlease install a High Finesse Wavemeter and '
+                    'try again.')
 
         # define the use of the GetWavelength function of the wavemeter
 #        self._GetWavelength2 = self._wavemeterdll.GetWavelength2
@@ -173,8 +165,8 @@ class HighFinesseWavemeter(Base,WavemeterInterface):
         self.hardware_thread.start()
 
 
-    def deactivation(self, e):
-        if self.getState() != 'idle' and self.getState() != 'deactivated':
+    def on_deactivate(self):
+        if self.module_state() != 'idle' and self.module_state() != 'deactivated':
             self.stop_acqusition()
         self.hardware_thread.quit()
         self.sig_handle_timer.disconnect()
@@ -185,8 +177,8 @@ class HighFinesseWavemeter(Base,WavemeterInterface):
             del self._wavemeterdll
             return 0
         except:
-            self.logMsg('Could not unload the wlmData.dll of the wavemeter.',
-                    msgType='error')
+            self.log.error('Could not unload the wlmData.dll of the '
+                    'wavemeter.')
 
 
     #############################################
@@ -208,13 +200,12 @@ class HighFinesseWavemeter(Base,WavemeterInterface):
         """
 
         # first check its status
-        if self.getState() == 'running':
-            self.logMsg('Wavemeter busy',
-                    msgType='error')
+        if self.module_state() == 'running':
+            self.log.error('Wavemeter busy')
             return -1
 
 
-        self.run()
+        self.module_state.run()
         # actually start the wavemeter
         self._wavemeterdll.Operation(self._cCtrlStartMeasurment) #starts measurement
 
@@ -229,14 +220,14 @@ class HighFinesseWavemeter(Base,WavemeterInterface):
         @return int: error code (0:OK, -1:error)
         """
         # check status just for a sanity check
-        if self.getState() == 'idle':
-            self.logMsg('Wavemeter was already stopped, stopping it anyway!',
-                    msgType='warning')
+        if self.module_state() == 'idle':
+            self.log.warning('Wavemeter was already stopped, stopping it '
+                    'anyway!')
         else:
             # stop the measurement thread
             self.sig_handle_timer.emit(True)
             # set status to idle again
-            self.stop()
+            self.module_state.stop()
 
         # Stop the actual wavemeter measurement
         self._wavemeterdll.Operation(self._cCtrlStop)

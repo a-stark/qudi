@@ -3,32 +3,35 @@
 """
 This file contains a gui to show data from a simple data source.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-from gui.guibase import GUIBase
-from pyqtgraph.Qt import QtCore, QtGui, uic
-from collections import OrderedDict
 import numpy as np
-import pyqtgraph as pg
 import os
 
+from core.module import Connector
+from gui.guibase import GUIBase
+from gui.colordefs import QudiPalettePale as palette
+from qtpy import QtWidgets
+from qtpy import QtCore
+from qtpy import uic
 
-class SimpleMainWindow(QtGui.QMainWindow):
+
+class SimpleMainWindow(QtWidgets.QMainWindow):
     """ Create the Main Window based on the *.ui file. """
 
     def __init__(self):
@@ -49,35 +52,23 @@ class SimpleDataGui(GUIBase):
     _modtype = 'gui'
 
     ## declare connectors
-    _in = {'simplelogic': 'SimpleDataLogic'}
+    simplelogic = Connector(interface='SimpleDataLogic')
 
     sigStart = QtCore.Signal()
     sigStop = QtCore.Signal()
 
-    def __init__(self, manager, name, config, **kwargs):
-        ## declare actions for state transitions
-        c_dict = {'onactivate': self.initUI, 'ondeactivate': self.deactivation}
-        super().__init__(manager, name, config, c_dict)
-        self.logMsg('The following configuration was found.', msgType='status')
+    def __init__(self, config, **kwargs):
+        super().__init__(config=config, **kwargs)
+        self.log.debug('The following configuration was found.')
 
         # checking for the right configuration
         for key in config.keys():
-            self.logMsg('{}: {}'.format(key,config[key]),
-                        msgType='status')
+            self.log.info('{0}: {1}'.format(key,config[key]))
 
-
-    def initUI(self, e=None):
+    def on_activate(self):
         """ Definition and initialisation of the GUI.
-
-        @param object e: Fysom.event object from Fysom class.
-                         An object created by the state machine module Fysom,
-                         which is connected to a specific event (have a look in
-                         the Base Class). This object contains the passed event,
-                         the state before the event happened and the destination
-                         of the state which should be reached after the event
-                         had happened.
         """
-        self._simple_logic = self.connector['in']['simplelogic']['object']
+        self._simple_logic = self.get_connector('simplelogic')
 
         #####################
         # Configuring the dock widgets
@@ -99,12 +90,13 @@ class SimpleDataGui(GUIBase):
 
         self.curvearr = []
         self.smootharr = []
+        colorlist = (palette.c1, palette.c2, palette.c3, palette.c4, palette.c5, palette.c6)
         ## Create an empty plot curve to be filled later, set its pen
         for i in range(self._simple_logic._data_logic.getChannels()):
             self.curvearr.append(self.plot1.plot())
-            self.curvearr[-1].setPen('g')
+            self.curvearr[-1].setPen(colorlist[(2*i)%len(colorlist)])
             self.smootharr.append(self.plot2.plot())
-            self.smootharr[-1].setPen('r', width=2)
+            self.smootharr[-1].setPen(colorlist[(2*i+1)%len(colorlist)], width=2)
 
         # make correct button state
         self._mw.startAction.setChecked(False)
@@ -124,15 +116,12 @@ class SimpleDataGui(GUIBase):
     def show(self):
         """Make window visible and put it above all other windows.
         """
-        QtGui.QMainWindow.show(self._mw)
+        QtWidgets.QMainWindow.show(self._mw)
         self._mw.activateWindow()
         self._mw.raise_()
 
-    def deactivation(self, e):
+    def on_deactivate(self):
         """ Deactivate the module properly.
-
-        @param object e: Fysom.event object from Fysom class. A more detailed
-                         explanation can be found in the method initUI.
         """
         # FIXME: !
         self._mw.close()
@@ -150,7 +139,7 @@ class SimpleDataGui(GUIBase):
                 x=np.arange(0, len(self._simple_logic.smooth[24:-25-10]))
                 )
 
-        if self._simple_logic.getState() == 'locked':
+        if self._simple_logic.module_state() == 'locked':
             self._mw.startAction.setText('Stop')
         else:
             self._mw.startAction.setText('Start')
@@ -158,7 +147,7 @@ class SimpleDataGui(GUIBase):
     def start_clicked(self):
         """ Handling the Start button to stop and restart the counter.
         """
-        if self._simple_logic.getState() == 'locked':
+        if self._simple_logic.module_state() == 'locked':
             self._mw.startAction.setText('Start')
             self.sigStop.emit()
         else:

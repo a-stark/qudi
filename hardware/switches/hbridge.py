@@ -2,18 +2,18 @@
 """
 Control custom board with 4 H bridges.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
@@ -21,29 +21,29 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 
 import visa
 import time
-from core.base import Base
+from core.module import Base, ConfigOption
 from core.util.mutex import Mutex
 from interface.switch_interface import SwitchInterface
+
 
 class HBridge(Base, SwitchInterface):
     """ Methods to control slow laser switching devices.
     """
     _modclass = 'switchinterface'
     _modtype = 'hardware'
-    _out = {'switch': 'SwitchInterface'}
 
-    def __init__(self, manager, name, config, **kwargs):
-        c_dict = {'onactivate': self.activation, 'ondeactivate': self.deactivation}
-        Base.__init__(self, manager, name, config,  c_dict)
+    serial_interface = ConfigOption('interface', 'ASRL1::INSTR', missing='warn')
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.lock = Mutex()
 
-    def activation(self, e):
-        config = self.getConfiguration()
-        if not 'interface' in config:
-            raise KeyError('{0} definitely needs an "interface" configuration value.'.format(self.__class__.__name__))
+    def on_activate(self):
+        """ Activate module.
+        """
         self.rm = visa.ResourceManager()
         self.inst = self.rm.open_resource(
-                config['interface'],
+                self.serial_interface,
                 baud_rate=9600,
                 write_termination='\r\n',
                 read_termination='\r\n',
@@ -51,7 +51,9 @@ class HBridge(Base, SwitchInterface):
                 send_end=True
         )
 
-    def deactivation(self, e):
+    def on_deactivate(self):
+        """ Deactivate module.
+        """
         self.inst.close()
 
     def getNumberOfSwitches(self):
@@ -115,13 +117,15 @@ class HBridge(Base, SwitchInterface):
                     if answer != 'P{0}=1'.format(coilnr):
                         return False
                     time.sleep(self.getSwitchTime(switchNumber))
-                    self.logMsg('{0} switch {1}: On'.format(self._name, switchNumber))
+                    self.log.info('{0} switch {1}: On'.format(
+                        self._name, switchNumber))
                 except:
                     return False
                 return True
         else:
-            self.logMsg('You are trying to use non-existing output no {0}'.format(coilnr), msgType='error')
-    
+            self.log.error('You are trying to use non-existing output no {0}'
+                    ''.format(coilnr))
+
     def switchOff(self, switchNumber):
         """ Retract coil ore move motor.
 
@@ -137,12 +141,14 @@ class HBridge(Base, SwitchInterface):
                     if answer != 'P{0}=0'.format(coilnr):
                         return False
                     time.sleep(self.getSwitchTime(switchNumber))
-                    self.logMsg('{0} switch {1}: Off'.format(self._name, switchNumber))
+                    self.log.info('{0} switch {1}: Off'.format(
+                        self._name, switchNumber))
                 except:
                     return False
                 return True
         else:
-            self.logMsg('You are trying to use non-existing output no {0}'.format(coilnr), msgType='error')
+            self.log.error('You are trying to use non-existing output no {0}'
+                    ''.format(coilnr))
 
     def getSwitchTime(self, switchNumber):
         """ Give switching time for switch.

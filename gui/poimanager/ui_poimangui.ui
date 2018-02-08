@@ -1,4 +1,3 @@
-<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>PoiManager</class>
  <widget class="QMainWindow" name="PoiManager">
@@ -6,8 +5,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>687</width>
-    <height>820</height>
+    <width>691</width>
+    <height>864</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -23,26 +22,26 @@
    <property name="enabled">
     <bool>true</bool>
    </property>
-   <layout class="QVBoxLayout" name="verticalLayout_3"/>
+   <layout class="QVBoxLayout" name="verticalLayout_3" />
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>687</width>
-     <height>21</height>
+     <width>691</width>
+     <height>30</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuMenu">
     <property name="title">
      <string>Menu</string>
     </property>
-    <addaction name="new_roi_Action"/>
-    <addaction name="save_roi_Action"/>
-    <addaction name="load_roi_Action"/>
-    <addaction name="reorient_roi_Action"/>
-    <addaction name="actionClose"/>
+    <addaction name="new_roi_Action" />
+    <addaction name="save_roi_Action" />
+    <addaction name="load_roi_Action" />
+    <addaction name="reorient_roi_Action" />
+    <addaction name="actionClose" />
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
@@ -52,18 +51,18 @@
      <property name="title">
       <string>Toolbars</string>
      </property>
-     <addaction name="roi_management_view_Action"/>
-     <addaction name="poi_tools_view_Action"/>
+     <addaction name="roi_management_view_Action" />
+     <addaction name="poi_tools_view_Action" />
     </widget>
-    <addaction name="roi_map_view_Action"/>
-    <addaction name="poi_editor_view_Action"/>
-    <addaction name="poi_tracker_view_Action"/>
-    <addaction name="sample_shift_view_Action"/>
-    <addaction name="separator"/>
-    <addaction name="menuToolbars"/>
+    <addaction name="roi_map_view_Action" />
+    <addaction name="poi_editor_view_Action" />
+    <addaction name="poi_tracker_view_Action" />
+    <addaction name="sample_shift_view_Action" />
+    <addaction name="separator" />
+    <addaction name="menuToolbars" />
    </widget>
-   <addaction name="menuMenu"/>
-   <addaction name="menuView"/>
+   <addaction name="menuMenu" />
+   <addaction name="menuView" />
   </widget>
   <widget class="QToolBar" name="roi_management_ToolBar">
    <property name="windowTitle">
@@ -78,11 +77,11 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
-   <addaction name="save_roi_Action"/>
-   <addaction name="new_roi_Action"/>
-   <addaction name="separator"/>
-   <addaction name="autofind_pois_Action"/>
-   <addaction name="optimize_roi_Action"/>
+   <addaction name="save_roi_Action" />
+   <addaction name="new_roi_Action" />
+   <addaction name="separator" />
+   <addaction name="autofind_pois_Action" />
+   <addaction name="optimize_roi_Action" />
   </widget>
   <widget class="QDockWidget" name="poi_editor_dockWidget">
    <property name="windowTitle">
@@ -159,7 +158,7 @@
         </font>
        </property>
        <property name="text">
-        <string>(x,y,z):</string>
+        <string>Coordinates: (x,y,z)</string>
        </property>
       </widget>
      </item>
@@ -173,6 +172,20 @@
        </property>
        <property name="textInteractionFlags">
         <set>Qt::LinksAccessibleByMouse|Qt::TextSelectableByKeyboard|Qt::TextSelectableByMouse</set>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="label_2">
+       <property name="text">
+        <string>Distance: direct (x, y)</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="poi_distance_label">
+       <property name="text">
+        <string>? (?, ?)</string>
        </property>
       </widget>
      </item>
@@ -326,9 +339,9 @@
      <item>
       <layout class="QHBoxLayout" name="horizontalLayout_11">
        <item>
-        <widget class="QCheckBox" name="periodic_refind_CheckBox">
+        <widget class="QLabel" name="label_5">
          <property name="text">
-          <string>Track (refind every</string>
+          <string>Track period:</string>
          </property>
         </widget>
        </item>
@@ -351,7 +364,7 @@
        <item>
         <widget class="QLabel" name="label_6">
          <property name="text">
-          <string>seconds)</string>
+          <string>seconds</string>
          </property>
         </widget>
        </item>
@@ -481,7 +494,7 @@
         </widget>
        </item>
        <item>
-        <widget class="QLineEdit" name="roi_name_LineEdit"/>
+        <widget class="QLineEdit" name="roi_name_LineEdit" />
        </item>
       </layout>
      </item>
@@ -500,7 +513,7 @@
        <item>
         <layout class="QVBoxLayout" name="verticalLayout" stretch="0,0,1,0,0,0,0">
          <item>
-          <widget class="QSpinBox" name="roi_cb_max_SpinBox">
+          <widget class="ScienDSpinBox" name="roi_cb_max_SpinBox">
            <property name="sizePolicy">
             <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
              <horstretch>0</horstretch>
@@ -509,7 +522,7 @@
            </property>
            <property name="maximumSize">
             <size>
-             <width>80</width>
+             <width>100</width>
              <height>16777215</height>
             </size>
            </property>
@@ -525,55 +538,53 @@
            <property name="accelerated">
             <bool>true</bool>
            </property>
+           <property name="suffix">
+            <string>c/s</string>
+           </property>
            <property name="minimum">
-            <number>-100000000</number>
+            <double>-1000000000.000000000000000</double>
            </property>
            <property name="maximum">
-            <number>100000000</number>
-           </property>
-           <property name="singleStep">
-            <number>1000</number>
+            <double>1000000000.000000000000000</double>
            </property>
            <property name="value">
-            <number>100000</number>
+            <double>100000.000000000000000</double>
            </property>
           </widget>
          </item>
          <item>
-          <layout class="QHBoxLayout" name="horizontalLayout_9">
-           <item>
-            <widget class="QLabel" name="label_5">
-             <property name="maximumSize">
-              <size>
-               <width>30</width>
-               <height>16777215</height>
-              </size>
-             </property>
-             <property name="text">
-              <string>%</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QSpinBox" name="roi_cb_high_centile_SpinBox">
-             <property name="maximumSize">
-              <size>
-               <width>16777215</width>
-               <height>16777215</height>
-              </size>
-             </property>
-             <property name="minimum">
-              <number>0</number>
-             </property>
-             <property name="maximum">
-              <number>100</number>
-             </property>
-             <property name="value">
-              <number>100</number>
-             </property>
-            </widget>
-           </item>
-          </layout>
+          <widget class="ScienDSpinBox" name="roi_cb_high_percentile_DoubleSpinBox">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>100</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+           </property>
+           <property name="suffix">
+            <string>%</string>
+           </property>
+           <property name="decimals">
+            <number>5</number>
+           </property>
+           <property name="minimum">
+            <double>0.000000000000000</double>
+           </property>
+           <property name="maximum">
+            <double>100.000000000000000</double>
+           </property>
+           <property name="value">
+            <double>100.000000000000000</double>
+           </property>
+          </widget>
          </item>
          <item>
           <widget class="PlotWidget" name="roi_cb_ViewWidget">
@@ -585,47 +596,14 @@
            </property>
            <property name="maximumSize">
             <size>
-             <width>80</width>
+             <width>100</width>
              <height>16777215</height>
             </size>
            </property>
           </widget>
          </item>
          <item>
-          <layout class="QHBoxLayout" name="horizontalLayout_4">
-           <item>
-            <widget class="QLabel" name="label_2">
-             <property name="maximumSize">
-              <size>
-               <width>30</width>
-               <height>16777215</height>
-              </size>
-             </property>
-             <property name="text">
-              <string>%</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QSpinBox" name="roi_cb_low_centile_SpinBox">
-             <property name="maximumSize">
-              <size>
-               <width>16777215</width>
-               <height>16777215</height>
-              </size>
-             </property>
-             <property name="maximum">
-              <number>100</number>
-             </property>
-             <property name="value">
-              <number>0</number>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </item>
-         <item>
-          <widget class="QSpinBox" name="roi_cb_min_SpinBox">
+          <widget class="ScienDSpinBox" name="roi_cb_low_percentile_DoubleSpinBox">
            <property name="sizePolicy">
             <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
              <horstretch>0</horstretch>
@@ -634,7 +612,41 @@
            </property>
            <property name="maximumSize">
             <size>
-             <width>80</width>
+             <width>100</width>
+             <height>16777215</height>
+            </size>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+           </property>
+           <property name="suffix">
+            <string>%</string>
+           </property>
+           <property name="decimals">
+            <number>5</number>
+           </property>
+           <property name="minimum">
+            <double>0.000000000000000</double>
+           </property>
+           <property name="maximum">
+            <double>100.000000000000000</double>
+           </property>
+           <property name="value">
+            <double>0.000000000000000</double>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="ScienDSpinBox" name="roi_cb_min_SpinBox">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>100</width>
              <height>16777215</height>
             </size>
            </property>
@@ -650,24 +662,24 @@
            <property name="accelerated">
             <bool>true</bool>
            </property>
+           <property name="suffix">
+            <string>c/s</string>
+           </property>
            <property name="minimum">
-            <number>-100000000</number>
+            <double>-1000000000.000000000000000</double>
            </property>
            <property name="maximum">
-            <number>100000000</number>
-           </property>
-           <property name="singleStep">
-            <number>1000</number>
+            <double>1000000000.000000000000000</double>
            </property>
            <property name="value">
-            <number>100</number>
+            <double>1000.000000000000000</double>
            </property>
           </widget>
          </item>
          <item>
           <widget class="QRadioButton" name="roi_cb_centiles_RadioButton">
            <property name="text">
-            <string>Centiles</string>
+            <string>Percentiles</string>
            </property>
            <property name="checked">
             <bool>true</bool>
@@ -760,10 +772,10 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
-   <addaction name="new_poi_Action"/>
-   <addaction name="goto_poi_Action"/>
-   <addaction name="refind_poi_Action"/>
-   <addaction name="track_poi_Action"/>
+   <addaction name="new_poi_Action" />
+   <addaction name="goto_poi_Action" />
+   <addaction name="refind_poi_Action" />
+   <addaction name="track_poi_Action" />
   </widget>
   <action name="new_roi_Action">
    <property name="icon">
@@ -814,7 +826,7 @@
    <property name="shortcut">
     <string>Alt+E</string>
    </property>
-  </action>
+  <property name="toolTip"><string>Shortcut:Alt+E</string></property></action>
   <action name="poi_tracker_view_Action">
    <property name="checkable">
     <bool>true</bool>
@@ -828,7 +840,7 @@
    <property name="shortcut">
     <string>Alt+T</string>
    </property>
-  </action>
+  <property name="toolTip"><string>Shortcut:Alt+T</string></property></action>
   <action name="sample_shift_view_Action">
    <property name="checkable">
     <bool>true</bool>
@@ -840,7 +852,7 @@
     <string>Sample shift</string>
    </property>
    <property name="toolTip">
-    <string>Display the sample shift</string>
+    . Shortcut:Alt+S<string>Display the sample shift. Shortcut:Alt+S</string>
    </property>
    <property name="shortcut">
     <string>Alt+S</string>
@@ -857,7 +869,7 @@
     <string>ROI Map</string>
    </property>
    <property name="toolTip">
-    <string>Display the ROI Map</string>
+    . Shortcut:Alt+M<string>Display the ROI Map. Shortcut:Alt+M</string>
    </property>
    <property name="shortcut">
     <string>Alt+M</string>
@@ -967,8 +979,13 @@
    <extends>QGraphicsView</extends>
    <header>pyqtgraph</header>
   </customwidget>
+  <customwidget>
+   <class>ScienDSpinBox</class>
+   <extends>QDoubleSpinBox</extends>
+   <header>qtwidgets.scientific_spinbox.h</header>
+  </customwidget>
  </customwidgets>
- <resources/>
+ <resources />
  <connections>
   <connection>
    <sender>poi_editor_view_Action</sender>
@@ -1155,38 +1172,6 @@
     <hint type="sourcelabel">
      <x>384</x>
      <y>41</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>-1</x>
-     <y>-1</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>track_poi_Action</sender>
-   <signal>triggered(bool)</signal>
-   <receiver>periodic_refind_CheckBox</receiver>
-   <slot>setChecked(bool)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>-1</x>
-     <y>-1</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>268</x>
-     <y>603</y>
-    </hint>
-   </hints>
-  </connection>
-  <connection>
-   <sender>periodic_refind_CheckBox</sender>
-   <signal>toggled(bool)</signal>
-   <receiver>track_poi_Action</receiver>
-   <slot>setChecked(bool)</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>268</x>
-     <y>603</y>
     </hint>
     <hint type="destinationlabel">
      <x>-1</x>

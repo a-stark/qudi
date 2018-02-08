@@ -1,7 +1,7 @@
 # ODMR GUI {#odmrgui}
 
 
-![ODMR window](odmrgui-capture-20150621132236-679-0.png "The main ODMR window")
+![ODMR window](images/odmrgui-capture-20150621132236-679-0.png "The main ODMR window")
 
 ## File
 
@@ -12,7 +12,7 @@ Not working yet
 By choosing `Options` and `Settings` this window shows up:
 
 
-![Settings window](odmrgui-capture-20150621132437-349-1.png "The settings window")
+![Settings window](images/odmrgui-capture-20150621132437-349-1.png "The settings window")
 Here one can change the number of lines which are displayed in the matrix and the clock frequnecy.
 
 ## Control elements
@@ -31,9 +31,9 @@ The fit can be executed during a scan as well as after it. The fit parameters ar
 
 ## Image
 
-The image shows the averaged data. It can be adjusted as described in QuDi Images.
+The image shows the averaged data. It can be adjusted as described in Qudi Images.
 
 ## Matrix
 
 Every line of the `Matrix` plot shows the result of a single scan. The number of lines can be changed in the `Settings` menu as explained above.
-The colorbar on the right side can be used to change the colors in the matrix. It is also a QuDi Images.
+The colorbar on the right side can be used to change the colors in the matrix. It is also a Qudi Images.

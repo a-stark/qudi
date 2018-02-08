@@ -2,28 +2,28 @@
 """
 Interfuse to do confocal scans with spectrometer data rather than APD count rates.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-from core.base import Base
-from interface.confocal_scanner_interface import ConfocalScannerInterface
 import time
-
 import numpy as np
+
+from core.module import Base, Connector, ConfigOption
+from interface.confocal_scanner_interface import ConfocalScannerInterface
 
 
 class SpectrometerScannerInterfuse(Base, ConfocalScannerInterface):
@@ -33,32 +33,17 @@ class SpectrometerScannerInterfuse(Base, ConfocalScannerInterface):
     """
     _modclass = 'confocalscannerinterface'
     _modtype = 'hardware'
+
     # connectors
-    _in = {'fitlogic': 'FitLogic',
-           'confocalscanner1': 'ConfocalScannerInterface',
-           'spectrometer1': 'SpectrometerInterface'}
-    _out = {'spectrometerscanner': 'ConfocalScannerInterface'}
+    fitlogic = Connector(interface='FitLogic')
+    confocalscanner1 = Connector(interface='ConfocalScannerInterface')
+    spectrometer1 = Connector(interface='SpectrometerInterface')
 
-    def __init__(self, manager, name, config, **kwargs):
-        # declare actions for state transitions
-        state_actions = {'onactivate': self.activation, 'ondeactivate': self.deactivation}
-        Base.__init__(self, manager, name, config, state_actions, **kwargs)
+    # config options
+    _clock_frequency = ConfigOption('clock_frequency', 100, missing='warn')
 
-        self.logMsg('The following configuration was found.',
-                    msgType='status')
-
-        # checking for the right configuration
-        for key in config.keys():
-            self.logMsg('{}: {}'.format(key, config[key]),
-                        msgType='status')
-
-        if 'clock_frequency' in config.keys():
-            self._clock_frequency = config['clock_frequency']
-        else:
-            self._clock_frequency = 100
-            self.logMsg('No clock_frequency configured taking 100 Hz instead.',
-                        msgType='warning')
-
+    def __init__(self, config, **kwargs):
+        super().__init__(config=config, **kwargs)
 
         # Internal parameters
         self._line_length = None
@@ -70,16 +55,16 @@ class SpectrometerScannerInterfuse(Base, ConfocalScannerInterface):
 
         self._num_points = 500
 
-    def activation(self, e):
+    def on_activate(self):
         """ Initialisation performed during activation of the module.
         """
 
-        self._fit_logic = self.connector['in']['fitlogic']['object']
-        self._scanner_hw = self.connector['in']['confocalscanner1']['object']
-        self._spectrometer_hw = self.connector['in']['spectrometer1']['object']
+        self._fit_logic = self.get_connector('fitlogic')
+        self._scanner_hw = self.get_connector('confocalscanner1')
+        self._spectrometer_hw = self.get_connector('spectrometer1')
 
 
-    def deactivation(self, e):
+    def on_deactivate(self):
         self.reset_hardware()
 
     def reset_hardware(self):
@@ -87,8 +72,7 @@ class SpectrometerScannerInterfuse(Base, ConfocalScannerInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        self.logMsg('Scanning Device will be reset.',
-                    msgType='warning')
+        self.log.warning('Scanning Device will be reset.')
         return 0
 
     def get_position_range(self):
@@ -99,7 +83,7 @@ class SpectrometerScannerInterfuse(Base, ConfocalScannerInterface):
         """
         return self._scanner_hw.get_position_range()
 
-    def set_position_range(self, myrange=[[0,1],[0,1],[0,1],[0,1]]):
+    def set_position_range(self, myrange=None):
         """ Sets the physical range of the scanner.
         This is a direct pass-through to the scanner HW
 
@@ -107,12 +91,14 @@ class SpectrometerScannerInterfuse(Base, ConfocalScannerInterface):
 
         @return int: error code (0:OK, -1:error)
         """
+        if myrange is None:
+            myrange = [[0,1],[0,1],[0,1],[0,1]]
 
         self._scanner_hw.set_position_range(myrange=myrange)
 
         return 0
 
-    def set_voltage_range(self, myrange=[-10.,10.]):
+    def set_voltage_range(self, myrange=None):
         """ Sets the voltage range of the NI Card.
         This is a direct pass-through to the scanner HW
 
@@ -120,11 +106,11 @@ class SpectrometerScannerInterfuse(Base, ConfocalScannerInterface):
 
         @return int: error code (0:OK, -1:error)
         """
+        if myrange is None:
+            myrange = [-10.,10.]
 
         self._scanner_hw.set_voltage_range(myrange=myrange)
-
         return 0
-
 
     def set_up_scanner_clock(self, clock_frequency = None, clock_channel = None):
         """ Configures the hardware clock of the NiDAQ card to give the timing.
@@ -151,12 +137,12 @@ class SpectrometerScannerInterfuse(Base, ConfocalScannerInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-
-        self.logMsg('ConfocalScannerInterfaceDummy>set_up_scanner',
-                    msgType='warning')
-
+        self.log.warning('ConfocalScannerInterfaceDummy>set_up_scanner')
         return 0
 
+    def get_scanner_axes(self):
+        """ Pass through scanner axes. """
+        return self._scanner_hw.get_scanner_axes()
 
     def scanner_set_position(self, x = None, y = None, z = None, a = None):
         """Move stage to x, y, z, a (where a is the fourth voltage channel).
@@ -171,7 +157,6 @@ class SpectrometerScannerInterfuse(Base, ConfocalScannerInterface):
         """
 
         self._scanner_hw.scanner_set_position(x=x, y=y, z=z, a=a)
-
         return 0
 
     def get_scanner_position(self):
@@ -193,25 +178,23 @@ class SpectrometerScannerInterfuse(Base, ConfocalScannerInterface):
         self._line_length = length
         return 0
 
-
-    def scan_line(self, line_path = None):
+    def scan_line(self, line_path=None, pixel_clock=False):
         """ Scans a line and returns the counts on that line.
 
         @param float[][4] line_path: array of 4-part tuples defining the voltage points
+        @param bool pixel_clock: whether we need to output a pixel clock for this line
 
         @return float[]: the photon counts per second
         """
 
-        #if self.getState() == 'locked':
-        #    self.logMsg('A scan_line is already running, close this one first.', \
-        #    msgType='error')
+        #if self.module_state() == 'locked':
+        #    self.log.error('A scan_line is already running, close this one first.')
         #    return -1
         #
-        #self.lock()
+        #self.module_state.lock()
 
         if not isinstance( line_path, (frozenset, list, set, tuple, np.ndarray, ) ):
-            self.logMsg('Given voltage list is no array type.', \
-            msgType='error')
+            self.log.error('Given voltage list is no array type.')
             return np.array([-1.])
 
         self.set_up_line(np.shape(line_path)[1])
@@ -219,7 +202,7 @@ class SpectrometerScannerInterfuse(Base, ConfocalScannerInterface):
         count_data = np.zeros(self._line_length)
 
         for i in xrange(self._line_length):
-            coords = line_path[:,i]
+            coords = line_path[:, i]
             self.scanner_set_position(x=coords[0], y=coords[1], z=coords[2], a=coords[3])
             print(coords)
             print(i)

@@ -1,30 +1,28 @@
 # -*- coding: utf-8 -*-
 """
-This file contains the QuDi logic class for performing polarisation dependence measurements.
+This file contains the Qudi logic class for performing polarisation dependence measurements.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
+from core.module import Connector
 from logic.generic_logic import GenericLogic
-from pyqtgraph.Qt import QtCore
-from core.util.mutex import Mutex
-import numpy as np
-import time
-import datetime
+from qtpy import QtCore
+
 
 class PolarisationDepLogic(GenericLogic):
     """This logic module rotates polarisation and records signal as a function of angle.
@@ -35,39 +33,23 @@ class PolarisationDepLogic(GenericLogic):
     _modtype = 'logic'
 
     ## declare connectors
-    _in = { 'counterlogic': 'CounterLogic',
-            'savelogic': 'SaveLogic',
-            'motor':'MotorInterface'
-            }
-    _out = {'polarisationdeplogic': 'PolarisationDepLogic'}
+    counterlogic = Connector(interface='CounterLogic')
+    savelogic = Connector(interface='SaveLogic')
+    motor = Connector(interface='MotorInterface')
 
     signal_rotation_finished = QtCore.Signal()
     signal_start_rotation = QtCore.Signal()
 
-    def __init__(self, manager, name, config, **kwargs):
-        """ Create CounterLogic object with connectors.
-
-          @param object manager: Manager object thath loaded this module
-          @param str name: unique module name
-          @param dict config: module configuration
-          @param dict kwargs: optional parameters
-        """
-        ## declare actions for state transitions
-        state_actions = {'onactivate': self.activation, 'ondeactivate': self.deactivation}
-        super().__init__(manager, name, config, state_actions, **kwargs)
-
-    def activation(self,e):
+    def on_activate(self):
         """ Initialisation performed during activation of the module.
-
-          @param object e: Fysom state change event
         """
 
-        self._counter_logic = self.connector['in']['counterlogic']['object']
+        self._counter_logic = self.get_connector('counterlogic')
 #        print("Counting device is", self._counting_device)
 
-        self._save_logic = self.connector['in']['savelogic']['object']
+        self._save_logic = self.get_connector('savelogic')
 
-        self._hwpmotor = self.connector['in']['motor']['object']
+        self._hwpmotor = self.get_connector('motor')
 
         # Initialise measurement parameters
         self.scan_length = 360
@@ -78,13 +60,11 @@ class PolarisationDepLogic(GenericLogic):
         self.signal_start_rotation.connect(self.rotate_polarisation, QtCore.Qt.QueuedConnection)
 
 
-    def deactivation(self, e):
+    def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
-
-          @param object e: Fysom state change event
         """
         return
- 
+
     def measure_polarisation_dependence(self):
         """Do a simple pol dep measurement.
         """
@@ -100,7 +80,7 @@ class PolarisationDepLogic(GenericLogic):
 
     def rotate_polarisation(self):
         self._hwpmotor.move_rel(self.scan_length)
-        self.logMsg('rotation finished, saving data', msgType='status', importance=5)
+        self.log.info('rotation finished, saving data')
         self.signal_rotation_finished.emit()
 
     def finish_scan(self):

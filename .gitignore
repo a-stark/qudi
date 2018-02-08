@@ -21,3 +21,9 @@
 /.idea
 /thirdparty
 /config/qo-config
+/documentation/generated
+/documentation/images
+
+# log files
+*.log
+*.log.*

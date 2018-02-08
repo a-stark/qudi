@@ -2,28 +2,30 @@
 """
 This file contains Qt models for Python data structures.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-from pyqtgraph.Qt import QtCore
+from qtpy import QtCore
 from collections import OrderedDict
 from .mutex import Mutex
 
 class DictTableModel(QtCore.QAbstractTableModel):
+    """ Qt model storing a tabel in dictionaries
+    """
 
     def __init__(self):
         super().__init__()
@@ -32,9 +34,14 @@ class DictTableModel(QtCore.QAbstractTableModel):
         self.storage = OrderedDict()
 
     def getKeyByNumber(self, n):
+        """ Get a dict key by index number
+
+            @param n int: index number for element
+
+            @return key: key at index
+        """
         i = 0
-        length = len(self.storage)
-        if n < 0 or n >= length:
+        if not(0 <= n < len(self.storage)):
             raise IndexError
         it = iter(self.storage)
         key = next(it)
@@ -44,6 +51,14 @@ class DictTableModel(QtCore.QAbstractTableModel):
         return key
 
     def getNumberByKey(self, key):
+        """ Get index number for dict key.
+
+            @param key: dict key
+
+            @return int: index numer for key
+
+            Warning: index number for a key changes when keys with lower numbers are removed.
+        """
         i = 0
         it = iter(self.storage)
         newkey = next(it)
@@ -98,14 +113,14 @@ class DictTableModel(QtCore.QAbstractTableModel):
 
     def headerData(self, section, orientation, role = QtCore.Qt.DisplayRole):
         """ Data for the table view headers.
-        
+
           @param int section: number of the column to get header data for
           @param Qt.Orientation: orientation of header (horizontal or vertical)
           @param ItemDataRole: role for which to get data
 
           @return QVariant: header data for given column and role
         """
-        if section < 0 and section > len(self.headers):
+        if not(0 <= section < len(self.headers)):
             return None
         elif role != QtCore.Qt.DisplayRole:
             return None
@@ -115,6 +130,13 @@ class DictTableModel(QtCore.QAbstractTableModel):
             return self.headers[section]
 
     def add(self, key, data):
+        """ Append key and data to dictionary, update model.
+
+            @param key: dict key
+            @param data: dict data
+
+            @return key: dict key
+        """
         with self.lock:
             if key in self.storage:
                 return None
@@ -125,6 +147,12 @@ class DictTableModel(QtCore.QAbstractTableModel):
             return key
 
     def pop(self, key):
+        """ Remove key from dictionary.
+
+            @param key: dict key to remove
+
+            @return value: value removed from dict
+        """
         with self.lock:
             if key in self.storage:
                 row = self.getNumberByKey(key)
@@ -135,6 +163,8 @@ class DictTableModel(QtCore.QAbstractTableModel):
 
 
 class ListTableModel(QtCore.QAbstractTableModel):
+    """ Qt model storing a table in lists.
+    """
 
     def __init__(self):
         super().__init__()
@@ -149,7 +179,7 @@ class ListTableModel(QtCore.QAbstractTableModel):
         """
         return len(self.storage)
 
-    def columnCount(self, parent = QtCore.QModelIndex()):
+    def columnCount(self, parent=QtCore.QModelIndex()):
         """ Gives the number of data fields.
 
           @return int: number of data fields
@@ -163,7 +193,7 @@ class ListTableModel(QtCore.QAbstractTableModel):
 
           @return Qt.ItemFlags: actins allowed fotr this cell
         """
-        return QtCore.Qt.ItemIsEnabled |  QtCore.Qt.ItemIsSelectable
+        return QtCore.Qt.ItemIsEnabled | QtCore.Qt.ItemIsSelectable
 
     def data(self, index, role):
         """ Get data from model for a given cell. Data can have a role that affects display.
@@ -185,7 +215,7 @@ class ListTableModel(QtCore.QAbstractTableModel):
         else:
             return None
 
-    def headerData(self, section, orientation, role = QtCore.Qt.DisplayRole):
+    def headerData(self, section, orientation, role=QtCore.Qt.DisplayRole):
         """ Data for the table view headers.
 
           @param int section: number of the column to get header data for
@@ -194,7 +224,7 @@ class ListTableModel(QtCore.QAbstractTableModel):
 
           @return QVariant: header data for given column and role
         """
-        if section < 0 and section > len(self.headers):
+        if not(0 <= section < len(self.headers)):
             return None
         elif role != QtCore.Qt.DisplayRole:
             return None
@@ -204,13 +234,22 @@ class ListTableModel(QtCore.QAbstractTableModel):
             return self.headers[section]
 
     def insert(self, n, data):
+        """ Insert a row into table.
+
+            @param n int: insert before nth element
+            @param data: row to insert
+        """
         with self.lock:
-            if n >= 0 and n <= len(self.storage):
+            if 0 <= n <= len(self.storage):
                 self.beginInsertRows(QtCore.QModelIndex(), n, n)
                 self.storage.insert(n, data)
                 self.endInsertRows()
 
     def append(self, data):
+        """ Append row to table.
+            
+            @param data: row to append
+        """
         with self.lock:
             n = len(self.storage)
             self.beginInsertRows(QtCore.QModelIndex(), n, n)
@@ -218,8 +257,14 @@ class ListTableModel(QtCore.QAbstractTableModel):
             self.endInsertRows()
 
     def pop(self, n):
+        """ Remove nth row from table.
+
+            @param n int: index of row to remove
+
+            @return data: removed row
+        """
         with self.lock:
-            if n >= 0 and n < len(self.storage):
+            if 0 <= n < len(self.storage):
                 self.beginRemoveRows(QtCore.QModelIndex(), n, n)
                 ret = self.storage.pop(n)
                 self.endRemoveRows()

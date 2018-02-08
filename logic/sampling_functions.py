@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
 
 """
-This file contains the QuDi file with all available sampling functions.
+This file contains the Qudi file with all available sampling functions.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
@@ -23,12 +23,12 @@ top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi
 import numpy as np
 from collections import OrderedDict
 
+
 class SamplingFunctions():
     """ Collection of mathematical functions used for sampling of the pulse
         sequences.
     """
     def __init__(self):
-
         # If you want to define a new function, make a new method and add the
         # reference to this function to the _math_func dictionary:
         self._math_func = OrderedDict()
@@ -54,15 +54,16 @@ class SamplingFunctions():
         # limitations, then use these.
         # Moreover, the display Widget in the GUI will depend on the
         # contraints you are setting here.
+        # FIXME: This GUI dependancy has to move to other places
 
         # predefine a general range for the frequency, amplitude and phase
         # <general_parameter> = {}
-        freq_def = {'unit': 'Hz', 'init_val': 0.0, 'min': -np.inf, 'max': +np.inf,
-                    'view_stepsize': 1e3, 'dec': 8, 'unit_prefix': 'M', 'type':float}
+        freq_def = {'unit': 'Hz', 'init_val': 0.0, 'min': 0.0, 'max': np.inf,
+                    'view_stepsize': 1.0, 'dec': 15, 'type': float}
         ampl_def = {'unit': 'V', 'init_val': 0.0, 'min': 0.0, 'max': 1.0,
-                    'view_stepsize': 0.001, 'dec': 3, 'unit_prefix': '', 'type': float}
-        phase_def = {'unit': '°', 'init_val': 0.0, 'min': -np.inf, 'max': +np.inf,
-                    'view_stepsize': 0.1, 'dec': 3, 'unit_prefix': '', 'type':float}
+                    'view_stepsize': 0.01, 'dec': 15, 'type': float}
+        phase_def = {'unit': '°', 'init_val': 0.0, 'min': -360, 'max': 360,
+                     'view_stepsize': 0.1, 'dec': 15, 'type': float}
 
         # the following keywords are known to the GUI elements, and you should
         # use only those to define you own limitation. Here is an explanation
@@ -77,35 +78,15 @@ class SamplingFunctions():
         #                   value.
         # 'hard_stepsize' : optional, the accepted value will be a multiple of
         #                   this. Normally, this will be dictate by hardware.
-        # 'dec' : number of decimals to be used for representation, this will
-        #         be related to the parameter 'unit_prefix'.
-        # 'unit_prefix' : desired metric prefix of the value, string, one of the
-        #               list:
-        #               [ 'p', 'n', 'micro','', 'm', 'k', 'M', 'G', 'T']
-        #               with the obvious meaning:
-        #        ['pico','nano','micro','milli','','kilo','Mega','Giga','Tera']
         # 'type' : the type of the parameter, either int, float, bool
 
-
-        self._unit_prefix={}
-        self._unit_prefix['f'] = 10**(-15)
-        self._unit_prefix['p'] = 10**(-12)
-        self._unit_prefix['n'] = 10**(-9)
-        self._unit_prefix['micro'] = 10**(-6)
-        self._unit_prefix['m'] = 10**(-3)
-        self._unit_prefix[''] = 10**(0)
-        self._unit_prefix['k'] = 10**(+3)
-        self._unit_prefix['M'] = 10**(+6)
-        self._unit_prefix['G'] = 10**(+9)
-        self._unit_prefix['T'] = 10**(+12)
-        self._unit_prefix['P'] = 10**(+15)
 
         # Configure also the parameter for the defined functions so that it is
         # know which input parameters the function desires:
 
         self.func_config = OrderedDict()
         self.func_config['Idle'] = OrderedDict()
-        self.func_config['DC'] =  OrderedDict()
+        self.func_config['DC'] = OrderedDict()
         self.func_config['DC']['amplitude1'] = ampl_def
 
         self.func_config['Sin'] = OrderedDict()
@@ -138,7 +119,7 @@ class SamplingFunctions():
         self.func_config['TripleSin']['phase3']     = phase_def
 
 
-    def _idle(self, time_arr, parameters={}):
+    def _idle(self, time_arr, parameters=None):
         result_arr = np.zeros(len(time_arr))
         return result_arr
 

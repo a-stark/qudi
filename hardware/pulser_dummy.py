@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
 
 """
-This file contains the QuDi hardware dummy for pulsing devices.
+This file contains the Qudi hardware dummy for pulsing devices.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
@@ -24,8 +24,9 @@ import os
 from collections import OrderedDict
 from fnmatch import fnmatch
 
-from core.base import Base
-from interface.pulser_interface import PulserInterface
+from core.util.modules import get_home_dir
+from core.module import Base, ConfigOption
+from interface.pulser_interface import PulserInterface, PulserConstraints
 
 
 class PulserDummy(Base, PulserInterface):
@@ -37,22 +38,11 @@ class PulserDummy(Base, PulserInterface):
     """
     _modclass = 'PulserDummy'
     _modtype = 'hardware'
-    # connectors
-    _out = {'pulser': 'PulserInterface'}
 
-    def __init__(self, manager, name, config, **kwargs):
-        state_actions = {'onactivate'   : self.activation,
-                         'ondeactivate' : self.deactivation}
-        Base.__init__(self, manager, name, config, state_actions, **kwargs)
+    def __init__(self, config, **kwargs):
+        super().__init__(config=config, **kwargs)
 
-        self.logMsg('The following configuration was found.', msgType='status')
-
-        # checking for the right configuration
-        for key in config.keys():
-            self.logMsg('{}: {}'.format(key,config[key]),
-                        msgType='status')
-
-        self.logMsg('Dummy Pulser: I will simulate an AWG :) !', msgType='status')
+        self.log.info('Dummy Pulser: I will simulate an AWG :) !')
 
         self.awg_waveform_directory = '/waves'
 
@@ -61,22 +51,21 @@ class PulserDummy(Base, PulserInterface):
 
             if not os.path.exists(self.pulsed_file_dir):
 
-                homedir = self.get_home_dir()
+                homedir = get_home_dir()
                 self.pulsed_file_dir = os.path.join(homedir, 'pulsed_files')
-                self.logMsg('The directory defined in parameter '
-                            '"pulsed_file_dir" in the config for '
-                            'SequenceGeneratorLogic class does not exist!\n'
-                            'The default home directory\n{0}\n will be taken '
-                            'instead.'.format(self.pulsed_file_dir),
-                            msgType='warning')
+                self.log.warning('The directory defined in parameter '
+                        '"pulsed_file_dir" in the config for '
+                        'SequenceGeneratorLogic class does not exist!\n'
+                        'The default home directory\n{0}\n will be taken '
+                        'instead.'.format(self.pulsed_file_dir))
         else:
-            homedir = self.get_home_dir()
+            homedir = get_home_dir()
             self.pulsed_file_dir = os.path.join(homedir, 'pulsed_files')
-            self.logMsg('No parameter "pulsed_file_dir" was specified in the '
-                        'config for SequenceGeneratorLogic as directory for '
-                        'the pulsed files!\nThe default home directory\n{0}\n'
-                        'will be taken instead.'.format(self.pulsed_file_dir),
-                        msgType='warning')
+            self.log.warning('No parameter "pulsed_file_dir" was specified '
+                    'in the config for SequenceGeneratorLogic as directory '
+                    'for the pulsed files!\nThe default home directory\n'
+                    '{0}\n'
+                    'will be taken instead.'.format(self.pulsed_file_dir))
 
         self.host_waveform_directory = self._get_dir_for_name('sampled_hardware_files')
 
@@ -104,7 +93,7 @@ class PulserDummy(Base, PulserInterface):
 
         self.uploaded_assets_list = []
         self.uploaded_files_list = []
-        self.current_loaded_asset = None
+        self.current_loaded_asset = ''
         self.is_output_enabled = True
 
         # settings for remote access on the AWG PC
@@ -114,125 +103,128 @@ class PulserDummy(Base, PulserInterface):
 
         self.current_status = 0    # that means off, not running.
 
-    def activation(self, e):
+    def on_activate(self):
         """ Initialisation performed during activation of the module.
-
-        @param object e: Event class object from Fysom.
-                         An object created by the state machine module Fysom,
-                         which is connected to a specific event (have a look in
-                         the Base Class). This object contains the passed event,
-                         the state before the event happened and the destination
-                         of the state which should be reached after the event
-                         had happened.
         """
         self.connected = True
 
-    def deactivation(self, e):
+    def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
-
-        @param object e: Event class object from Fysom. A more detailed
-                         explanation can be found in method activation.
         """
 
         self.connected = False
 
     def get_constraints(self):
-        """ Retrieve the hardware constrains from the Pulsing device.
-
-        @return dict: dict with constraints for the sequence generation and GUI
-
-        Provides all the constraints (e.g. sample_rate, amplitude,
-        total_length_bins, channel_config, ...) related to the pulse generator
-        hardware to the caller.
-        The keys of the returned dictionary are the str name for the constraints
-        (which are set in this method).
-
-                    NO OTHER KEYS SHOULD BE INVENTED!
-
-        If you are not sure about the meaning, look in other hardware files to
-        get an impression. If still additional constraints are needed, then they
-        have to be added to all files containing this interface.
-
-        The items of the keys are again dictionaries which have the generic
-        dictionary form:
-            {'min': <value>,
-             'max': <value>,
-             'step': <value>,
-             'unit': '<value>'}
-
-        Only the keys 'activation_config' and differs, since it contain the
-        channel configuration/activation information.
-
-        If the constraints cannot be set in the pulsing hardware (because it
-        might e.g. has no sequence mode) then write just zero to each generic
-        dict. Note that there is a difference between float input (0.0) and
-        integer input (0).
-
-        ALL THE PRESENT KEYS OF THE CONSTRAINTS DICT MUST BE ASSIGNED!
         """
-        constraints = dict()
+        Retrieve the hardware constrains from the Pulsing device.
 
-        # if interleave option is available, then sample rate constraints must
-        # be assigned to the output of a function called
-        # _get_sample_rate_constraints()
-        # which outputs the shown dictionary with the correct values depending
-        # on the present mode. The the GUI will have to check again the
-        # limitations if interleave was selected.
-        constraints['sample_rate']  = self._get_sample_rate_constraints()
+        @return constraints object: object with pulser constraints as attributes.
 
-        # The file formats are hardware specific. The sequence_generator_logic will need this
-        # information to choose the proper output format for waveform and sequence files.
-        constraints['waveform_format'] = self.compatible_waveform_format
-        constraints['sequence_format'] = self.compatible_sequence_format
+        Provides all the constraints (e.g. sample_rate, amplitude, total_length_bins,
+        channel_config, ...) related to the pulse generator hardware to the caller.
 
-        # the stepsize will be determined by the DAC in combination with the
-        # maximal output amplitude (in Vpp):
-        constraints['a_ch_amplitude'] = {'min': 0.02, 'max': 2.0,
-                                         'step': 0.001, 'unit': 'Vpp'}
+            SEE PulserConstraints CLASS IN pulser_interface.py FOR AVAILABLE CONSTRAINTS!!!
 
-        constraints['a_ch_offset'] = {'min': -1.0, 'max': 1.0,
-                                      'step': 0.001, 'unit': 'V'}
+        If you are not sure about the meaning, look in other hardware files to get an impression.
+        If still additional constraints are needed, then they have to be added to the
+        PulserConstraints class.
 
-        constraints['d_ch_low'] = {'min': -1.0, 'max': 4.0,
-                                   'step': 0.01, 'unit': 'V'}
+        Each scalar parameter is an ScalarConstraints object defined in cor.util.interfaces.
+        Essentially it contains min/max values as well as min step size, default value and unit of
+        the parameter.
 
-        constraints['d_ch_high'] = {'min': 0.0, 'max': 5.0,
-                                    'step': 0.0, 'unit': 'V'}
+        PulserConstraints.activation_config differs, since it contain the channel
+        configuration/activation information of the form:
+            {<descriptor_str>: <channel_list>,
+             <descriptor_str>: <channel_list>,
+             ...}
 
-        constraints['sampled_file_length'] = {'min': 80, 'max': 64.8e6,
-                                              'step': 1, 'unit': 'Samples'}
+        If the constraints cannot be set in the pulsing hardware (e.g. because it might have no
+        sequence mode) just leave it out so that the default is used (only zeros).
+        """
+        constraints = PulserConstraints()
 
-        constraints['digital_bin_num'] = {'min': 0, 'max': 0.0,
-                                          'step': 0, 'unit': '#'}
+        # The file formats are hardware specific.
+        constraints.waveform_format = [self.compatible_waveform_format]
+        constraints.sequence_format = [self.compatible_sequence_format]
 
-        constraints['waveform_num'] = {'min': 1, 'max': 32000,
-                                       'step': 1, 'unit': '#'}
+        if self.interleave:
+            constraints.sample_rate.min = 12.0e9
+            constraints.sample_rate.max = 24.0e9
+            constraints.sample_rate.step = 4.0e8
+            constraints.sample_rate.default = 24.0e9
+        else:
+            constraints.sample_rate.min = 10.0e6
+            constraints.sample_rate.max = 12.0e9
+            constraints.sample_rate.step = 10.0e6
+            constraints.sample_rate.default = 12.0e9
 
-        constraints['sequence_num'] = {'min': 1, 'max': 8000,
-                                       'step': 1, 'unit': '#'}
+        constraints.a_ch_amplitude.min = 0.02
+        constraints.a_ch_amplitude.max = 2.0
+        constraints.a_ch_amplitude.step = 0.001
+        constraints.a_ch_amplitude.default = 2.0
 
-        constraints['subsequence_num'] = {'min': 1, 'max': 4000,
-                                          'step': 1, 'unit': '#'}
+        constraints.a_ch_offset.min = -1.0
+        constraints.a_ch_offset.max = 1.0
+        constraints.a_ch_offset.step = 0.001
+        constraints.a_ch_offset.default = 0.0
 
-        # If sequencer mode is enable than sequence_param should be not just an
-        # empty dictionary.
-        sequence_param = OrderedDict()
-        sequence_param['repetitions'] = {'min': 0, 'max': 65536, 'step': 1,
-                                         'unit': '#'}
-        sequence_param['trigger_wait'] = {'min': False, 'max': True, 'step': 1,
-                                          'unit': 'bool'}
-        sequence_param['event_jump_to'] = {'min': -1, 'max': 8000, 'step': 1,
-                                           'unit': 'row'}
-        sequence_param['go_to'] = {'min': 0, 'max': 8000, 'step': 1,
-                                   'unit': 'row'}
-        constraints['sequence_param'] = sequence_param
+        constraints.d_ch_low.min = -1.0
+        constraints.d_ch_low.max = 4.0
+        constraints.d_ch_low.step = 0.01
+        constraints.d_ch_low.default = 0.0
 
-        # the name a_ch<num> and d_ch<num> are generic names, which describe
-        # UNAMBIGUOUSLY the channels. Here all possible channel configurations
-        # are stated, where only the generic names should be used. The names
-        # for the different configurations can be customary chosen.
+        constraints.d_ch_high.min = 0.0
+        constraints.d_ch_high.max = 5.0
+        constraints.d_ch_high.step = 0.01
+        constraints.d_ch_high.default = 5.0
 
+        constraints.sampled_file_length.min = 80
+        constraints.sampled_file_length.max = 64800000
+        constraints.sampled_file_length.step = 1
+        constraints.sampled_file_length.default = 80
+
+        constraints.waveform_num.min = 1
+        constraints.waveform_num.max = 32000
+        constraints.waveform_num.step = 1
+        constraints.waveform_num.default = 1
+
+        constraints.sequence_num.min = 1
+        constraints.sequence_num.max = 8000
+        constraints.sequence_num.step = 1
+        constraints.sequence_num.default = 1
+
+        constraints.subsequence_num.min = 1
+        constraints.subsequence_num.max = 4000
+        constraints.subsequence_num.step = 1
+        constraints.subsequence_num.default = 1
+
+        # If sequencer mode is available then these should be specified
+        constraints.repetitions.min = 0
+        constraints.repetitions.max = 65539
+        constraints.repetitions.step = 1
+        constraints.repetitions.default = 0
+
+        constraints.trigger_in.min = 0
+        constraints.trigger_in.max = 2
+        constraints.trigger_in.step = 1
+        constraints.trigger_in.default = 0
+
+        constraints.event_jump_to.min = 0
+        constraints.event_jump_to.max = 8000
+        constraints.event_jump_to.step = 1
+        constraints.event_jump_to.default = 0
+
+        constraints.go_to.min = 0
+        constraints.go_to.max = 8000
+        constraints.go_to.step = 1
+        constraints.go_to.default = 0
+
+        # the name a_ch<num> and d_ch<num> are generic names, which describe UNAMBIGUOUSLY the
+        # channels. Here all possible channel configurations are stated, where only the generic
+        # names should be used. The names for the different configurations can be customary chosen.
         activation_config = OrderedDict()
+        activation_config['config0'] = ['a_ch1', 'd_ch1', 'd_ch2', 'a_ch2', 'd_ch3', 'd_ch4']
         activation_config['config1'] = ['a_ch2', 'd_ch1', 'd_ch2', 'a_ch3', 'd_ch3', 'd_ch4']
         # Usage of channel 1 only:
         activation_config['config2'] = ['a_ch2', 'd_ch1', 'd_ch2']
@@ -241,32 +233,17 @@ class PulserDummy(Base, PulserInterface):
         # Usage of Interleave mode:
         activation_config['config4'] = ['a_ch1', 'd_ch1', 'd_ch2']
         # Usage of only digital channels:
-        activation_config['config5'] = ['d_ch1', 'd_ch2', 'd_ch3', 'd_ch4',
-                                        'd_ch5', 'd_ch6', 'd_ch7', 'd_ch8']
+        activation_config['config5'] = ['d_ch1', 'd_ch2', 'd_ch3', 'd_ch4', 'd_ch5', 'd_ch6',
+                                        'd_ch7', 'd_ch8']
         # Usage of only one analog channel:
         activation_config['config6'] = ['a_ch1']
         activation_config['config7'] = ['a_ch2']
         activation_config['config8'] = ['a_ch3']
         # Usage of only the analog channels:
         activation_config['config9'] = ['a_ch2', 'a_ch3']
-
-        constraints['activation_config'] = activation_config
+        constraints.activation_config = activation_config
 
         return constraints
-
-    def _get_sample_rate_constraints(self):
-        """ If sample rate changes during Interleave mode, then it has to be
-            adjusted for that state.
-
-        @return dict: with keys 'min', 'max':, 'step' and 'unit' and the
-                      assigned values for that keys.
-        """
-        if self.interleave:
-            return {'min': 12.0e9, 'max': 24.0e9,
-                    'step': 4, 'unit': 'Samples/s'}
-        else:
-            return {'min': 10.0e6, 'max': 12.0e9,
-                    'step': 4, 'unit': 'Samples/s'}
 
     def pulser_on(self):
         """ Switches the pulsing device on.
@@ -274,7 +251,7 @@ class PulserDummy(Base, PulserInterface):
         @return int: error code (0:stopped, -1:error, 1:running)
         """
         self.current_status = 1
-        self.logMsg('PulserDummy: Switch on the Output.', msgType='status')
+        self.log.info('PulserDummy: Switch on the Output.')
         return self.current_status
 
     def pulser_off(self):
@@ -283,8 +260,39 @@ class PulserDummy(Base, PulserInterface):
         @return int: error code (0:stopped, -1:error, 1:running)
         """
         self.current_status = 0
-        self.logMsg('PulserDummy: Switch off the Output.', msgType='status')
+        self.log.info('PulserDummy: Switch off the Output.')
         return self.current_status
+
+    def direct_write_ensemble(self, ensemble_name, analog_samples, digital_samples):
+        """
+
+        @param ensemble_name:
+        @param analog_samples:
+        @param digital_samples:
+        @return:
+        """
+        filename = ensemble_name + '.' + self.compatible_waveform_format
+        if filename not in self.uploaded_files_list:
+            self.uploaded_files_list.append(filename)
+        if ensemble_name not in self.uploaded_assets_list:
+            self.uploaded_assets_list.append(ensemble_name)
+        self.log.info('Ensemble "{0}" directly written on dummy pulser.'.format(ensemble_name))
+        return 0
+
+    def direct_write_sequence(self, sequence_name, sequence_params):
+        """
+
+        @param sequence_name:
+        @param sequence_params:
+        @return:
+        """
+        filename = sequence_name + '.' + self.compatible_sequence_format
+        if filename not in self.uploaded_files_list:
+            self.uploaded_files_list.append(filename)
+        if sequence_name not in self.uploaded_assets_list:
+            self.uploaded_assets_list.append(sequence_name)
+        self.log.info('Sequence "{0}" directly written on dummy pulser.'.format(sequence_name))
+        return 0
 
     def upload_asset(self, asset_name=None):
         """ Upload an already hardware conform file to the device.
@@ -297,8 +305,8 @@ class PulserDummy(Base, PulserInterface):
         If nothing is passed, method will be skipped.
         """
         if asset_name is None:
-            self.logMsg('No asset name provided for upload!\nCorrect '
-                        'that!\nCommand will be ignored.', msgType='warning')
+            self.log.warning('No asset name provided for upload!\nCorrect that!\nCommand will be '
+                             'ignored.')
             return -1
 
         saved_files = self._get_filenames_on_host()
@@ -307,9 +315,11 @@ class PulserDummy(Base, PulserInterface):
             if filename not in self.uploaded_files_list:
                 if (asset_name+'.seq') in filename:
                     self.uploaded_files_list.append(filename)
+                if (asset_name+'.seqx') in filename:
+                    self.uploaded_files_list.append(filename)
                 elif fnmatch(filename, asset_name+'_ch?.wfm'):
                     self.uploaded_files_list.append(filename)
-                elif fnmatch(filename, asset_name+'_ch?.WFMX'):
+                elif fnmatch(filename, asset_name+'_ch?.wfmx'):
                     self.uploaded_files_list.append(filename)
                 elif fnmatch(filename, asset_name+'.mat'):
                     self.uploaded_files_list.append(filename)
@@ -318,7 +328,7 @@ class PulserDummy(Base, PulserInterface):
             self.uploaded_assets_list.append(asset_name)
         return 0
 
-    def load_asset(self, asset_name, load_dict={}):
+    def load_asset(self, asset_name, load_dict=None):
         """ Loads a sequence or waveform to the specified channel of the pulsing
             device.
 
@@ -340,6 +350,8 @@ class PulserDummy(Base, PulserInterface):
         Unused for digital pulse generators without sequence storage capability
         (PulseBlaster, FPGA).
         """
+        if load_dict is None:
+            load_dict = {}
         if asset_name in self.uploaded_assets_list:
             self.current_loaded_asset = asset_name
         return 0
@@ -360,7 +372,7 @@ class PulserDummy(Base, PulserInterface):
         Unused for digital pulse generators without storage capability
         (PulseBlaster, FPGA).
         """
-        self.current_loaded_asset = None
+        self.current_loaded_asset = ''
         return
 
     def get_status(self):
@@ -406,7 +418,7 @@ class PulserDummy(Base, PulserInterface):
         self.sample_rate = sample_rate
         return self.sample_rate
 
-    def get_analog_level(self, amplitude=[], offset=[]):
+    def get_analog_level(self, amplitude=None, offset=None):
         """ Retrieve the analog amplitude and offset of the provided channels.
 
         @param list amplitude: optional, if a specific amplitude value (in Volt
@@ -442,6 +454,10 @@ class PulserDummy(Base, PulserInterface):
         In general there is no bijective correspondence between
         (amplitude, offset) and (value high, value low)!
         """
+        if amplitude is None:
+            amplitude = []
+        if offset is None:
+            offset = []
 
         ampl = {}
         off = {}
@@ -463,7 +479,7 @@ class PulserDummy(Base, PulserInterface):
 
         return ampl, off
 
-    def set_analog_level(self, amplitude={}, offset={}):
+    def set_analog_level(self, amplitude=None, offset=None):
         """ Set amplitude and/or offset value of the provided analog channel.
 
         @param dict amplitude: dictionary, with key being the channel and items
@@ -492,6 +508,10 @@ class PulserDummy(Base, PulserInterface):
         In general there is no bijective correspondence between
         (amplitude, offset) and (value high, value low)!
         """
+        if amplitude is None:
+            amplitude = {}
+        if offset is None:
+            offset = {}
 
         for a_ch in amplitude:
             self.amplitude_list[a_ch] = amplitude[a_ch]
@@ -501,7 +521,7 @@ class PulserDummy(Base, PulserInterface):
 
         return self.get_analog_level(amplitude=list(amplitude), offset=list(offset))
 
-    def get_digital_level(self, low=[], high=[]):
+    def get_digital_level(self, low=None, high=None):
         """ Retrieve the digital low and high level of the provided channels.
 
         @param list low: optional, if a specific low value (in Volt) of a
@@ -536,6 +556,10 @@ class PulserDummy(Base, PulserInterface):
         In general there is no bijective correspondence between
         (amplitude, offset) and (value high, value low)!
         """
+        if low is None:
+            low = []
+        if high is None:
+            high = []
 
         low_val = {}
         high_val = {}
@@ -557,7 +581,7 @@ class PulserDummy(Base, PulserInterface):
 
         return low_val, high_val
 
-    def set_digital_level(self, low={}, high={}):
+    def set_digital_level(self, low=None, high=None):
         """ Set low and/or high value of the provided digital channel.
 
         @param dict low: dictionary, with key being the channel and items being
@@ -584,6 +608,10 @@ class PulserDummy(Base, PulserInterface):
         In general there is no bijective correspondence between
         (amplitude, offset) and (value high, value low)!
         """
+        if low is None:
+            low = {}
+        if high is None:
+            high = {}
 
         for d_ch in low:
             self.digital_low_list[d_ch] = low[d_ch]
@@ -593,7 +621,7 @@ class PulserDummy(Base, PulserInterface):
 
         return self.get_digital_level(low=list(low), high=list(high))
 
-    def get_active_channels(self, ch=[]):
+    def get_active_channels(self, ch=None):
         """ Get the active channels of the pulse generator hardware.
 
         @param list ch: optional, if specific analog or digital channels are
@@ -610,6 +638,8 @@ class PulserDummy(Base, PulserInterface):
         If no parameters are passed to this method all channels will be asked
         for their setting.
         """
+        if ch is None:
+            ch = []
 
         active_ch = {}
 
@@ -622,7 +652,7 @@ class PulserDummy(Base, PulserInterface):
 
         return active_ch
 
-    def set_active_channels(self, ch={}):
+    def set_active_channels(self, ch=None):
         """ Set the active channels for the pulse generator hardware.
 
         @param dict ch: dictionary with keys being the analog or digital
@@ -646,12 +676,14 @@ class PulserDummy(Base, PulserInterface):
         The hardware itself has to handle, whether separate channel activation
         is possible.
         """
+        if ch is None:
+            ch = {}
         for channel in ch:
             self.active_channel[channel] = ch[channel]
 
         return self.get_active_channels(ch=list(ch))
 
-    def get_uploaded_assets_names(self):
+    def get_uploaded_asset_names(self):
         """ Retrieve the names of all uploaded assets on the device.
 
         @return list: List of all uploaded asset name strings in the current
@@ -662,7 +694,7 @@ class PulserDummy(Base, PulserInterface):
         """
         return self.uploaded_assets_list
 
-    def get_saved_assets_names(self):
+    def get_saved_asset_names(self):
         """ Retrieve the names of all sampled and saved assets on the host PC.
         This is no list of the file names.
 
@@ -676,7 +708,7 @@ class PulserDummy(Base, PulserInterface):
         # exclude the channel specifier for multiple analog channels and create return list
         saved_assets = []
         for name in file_list:
-            if fnmatch(name, '*_Ch?.WFMX') or fnmatch(name, '*_ch?.wfm'):
+            if fnmatch(name, '*_ch?.wfmx') or fnmatch(name, '*_ch?.wfm') or fnmatch(name, '*.seq') or fnmatch(name, '*.seqx'):
                 asset_name = name.rsplit('_', 1)[0]
                 if asset_name not in saved_assets:
                     saved_assets.append(asset_name)
@@ -704,14 +736,14 @@ class PulserDummy(Base, PulserInterface):
 
         files_to_delete = []
         for filename in self.uploaded_files_list:
-            if fnmatch(filename, asset_name+'.mat') or fnmatch(filename, asset_name+'_Ch?.WFMX') or fnmatch(filename, asset_name+'_ch?.wfm'):
+            if fnmatch(filename, asset_name+'.mat') or fnmatch(filename, asset_name+'_ch?.wfmx') or fnmatch(filename, asset_name+'_ch?.wfm' or fnmatch(filename, asset_name+'_ch?.seq') or fnmatch(filename, asset_name+'_ch?.seqx')):
                 files_to_delete.append(filename)
 
         for filename in files_to_delete:
             self.uploaded_files_list.remove(filename)
         return 0
 
-    def set_sequence_directory(self, dir_path):
+    def set_asset_dir_on_device(self, dir_path):
         """ Change the directory where the assets are stored on the device.
 
         @param string dir_path: The target directory
@@ -770,9 +802,8 @@ class PulserDummy(Base, PulserInterface):
         @return int: error code (0:OK, -1:error)
         """
 
-        self.logMsg('It is so nice that you talk to me and told me "{0}"; as '
-                    'a dummy it is very dull out here! :) '.format(command),
-                    msgType='status')
+        self.log.info('It is so nice that you talk to me and told me "{0}"; '
+                'as a dummy it is very dull out here! :) '.format(command))
 
         return 0
 
@@ -784,9 +815,8 @@ class PulserDummy(Base, PulserInterface):
         @return string: the answer of the device to the 'question' in a string
         """
 
-        self.logMsg("Dude, I'm a dummy! Your question '{0}' is way to "
-                    "complicated for me :D !".format(question),
-                    msgType='status')
+        self.log.info('Dude, I\'m a dummy! Your question \'{0}\' is way to '
+                    'complicated for me :D !'.format(question))
 
         return 'I am a dummy!'
 
@@ -795,7 +825,7 @@ class PulserDummy(Base, PulserInterface):
 
         @return int: error code (0:OK, -1:error)
         """
-        self.logMsg('Dummy cannot be reseted!', msgType='status')
+        self.log.info('Dummy cannot be reseted!')
 
         return 0
 
@@ -824,7 +854,7 @@ class PulserDummy(Base, PulserInterface):
 
         @return: list, The full filenames of all assets saved on the host PC.
         """
-        filename_list = [f for f in os.listdir(self.host_waveform_directory) if (f.endswith('.WFMX') or f.endswith('.mat') or f.endswith('.wfm'))]
+        filename_list = [f for f in os.listdir(self.host_waveform_directory) if (f.endswith('.wfmx') or f.endswith('.mat') or f.endswith('.wfm') or f.endswith('.seq') or f.endswith('.seqx'))]
         return filename_list
 
     def _get_num_a_ch(self):
@@ -832,7 +862,7 @@ class PulserDummy(Base, PulserInterface):
 
         @return int: number of analog channels.
         """
-        config = self.get_constraints()['activation_config']
+        config = self.get_constraints().activation_config
 
         all_a_ch = []
         for conf in config:
@@ -853,7 +883,7 @@ class PulserDummy(Base, PulserInterface):
 
         @return int: number of digital channels.
         """
-        config = self.get_constraints()['activation_config']
+        config = self.get_constraints().activation_config
 
         all_d_ch = []
         for conf in config:

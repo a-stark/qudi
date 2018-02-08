@@ -1,34 +1,36 @@
 # -*- coding: utf-8 -*-
 
 """
-This file contains the QuDi Interface file for control wavemeter hardware.
+This file contains the Qudi Interface file for control wavemeter hardware.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-from core.util.customexceptions import InterfaceImplementationError
+import abc
+from core.util.interfaces import InterfaceMetaclass
 
 
-class WavemeterInterface():
+class WavemeterInterface(metaclass=InterfaceMetaclass):
     """ Define the controls for a wavemeter hardware."""
 
     _modclass = 'WavemeterInterface'
     _modtype = 'interface'
 
+    @abc.abstractmethod
     def start_acqusition(self):
         """ Method to start the wavemeter software.
 
@@ -37,19 +39,18 @@ class WavemeterInterface():
         Also the actual threaded method for getting the current wavemeter
         reading is started.
         """
+        pass
 
-        raise InterfaceImplementationError('WavemeterInterface>start_acqusition')
-        return -1
-
+    @abc.abstractmethod
     def stop_acqusition(self):
         """ Stops the Wavemeter from measuring and kills the thread that queries
             the data.
 
         @return int: error code (0:OK, -1:error)
         """
-        raise InterfaceImplementationError('WavemeterInterface>stop_acqusition')
-        return -1
+        pass
 
+    @abc.abstractmethod
     def get_current_wavelength(self, kind="air"):
         """ This method returns the current wavelength.
 
@@ -58,9 +59,9 @@ class WavemeterInterface():
 
         @return float: wavelength (or negative value for errors)
         """
-        raise InterfaceImplementationError('WavemeterInterface>get_current_wavelength')
-        return -1.
+        pass
 
+    @abc.abstractmethod
     def get_current_wavelength2(self, kind="air"):
         """ This method returns the current wavelength of the second input channel.
 
@@ -69,17 +70,17 @@ class WavemeterInterface():
 
         @return float: wavelength (or negative value for errors)
         """
-        raise InterfaceImplementationError('WavemeterInterface>get_current_wavelength2')
-        return -1.
+        pass
 
+    @abc.abstractmethod
     def get_timing(self):
         """ Get the timing of the internal measurement thread.
 
         @return float: clock length in second
         """
-        raise InterfaceImplementationError('WavemeterInterface>get_timing')
-        return -1.
+        pass
 
+    @abc.abstractmethod
     def set_timing(self, timing):
         """ Set the timing of the internal measurement thread.
 
@@ -87,5 +88,4 @@ class WavemeterInterface():
 
         @return int: error code (0:OK, -1:error)
         """
-        raise InterfaceImplementationError('WavemeterInterface>set_timing')
-        return -1
+        pass

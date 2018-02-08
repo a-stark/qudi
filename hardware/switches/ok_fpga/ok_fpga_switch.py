@@ -2,31 +2,30 @@
 """
 Control an output channel of the FPGA to use as a TTL switch.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-from core.base import Base
+
+import os
+import okfrontpanel as ok
+from core.module import Base
+from core.util.modules import get_main_dir
 from core.util.mutex import Mutex
 from interface.switch_interface import SwitchInterface
-import os
-try:
-    import thirdparty.opal_kelly.ok64 as ok
-except ImportError:
-    import thirdparty.opal_kelly.ok32 as ok
 
 
 class OkFpgaTtlSwitch(Base, SwitchInterface):
@@ -35,26 +34,24 @@ class OkFpgaTtlSwitch(Base, SwitchInterface):
     """
     _modclass = 'switchinterface'
     _modtype = 'hardware'
-    _out = {'switch': 'SwitchInterface'}
 
-    def __init__(self, manager, name, config, **kwargs):
-        c_dict = {'onactivate': self.activation, 'ondeactivate': self.deactivation}
-        Base.__init__(self, manager, name, config,  c_dict)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.lock = Mutex()
 
-    def activation(self, e):
+    def on_activate(self):
         self.fp = ok.FrontPanel()
         self.fp.GetDeviceCount()
         self.fp.OpenBySerial(self.fp.GetDeviceListSerial(0))
-        self.fp.ConfigureFPGA(os.path.join(self.get_main_dir(), 'thirdparty', 'qo_fpga', 'switch_top.bit'))
+        self.fp.ConfigureFPGA(os.path.join(get_main_dir(), 'thirdparty', 'qo_fpga', 'switch_top.bit'))
         if not self.fp.IsFrontPanelEnabled():
-            self.logMsg('ERROR: FrontPanel is not enabled in FPGA switch!', msgType='error')
+            self.log.error('FrontPanel is not enabled in FPGA switch!')
             return
         else:
             self.reset()
-            self.logMsg('FPGA connected')
+            self.log.info('FPGA connected')
 
-    def deactivation(self, e):
+    def on_deactivate(self):
         pass
         # self.fp.
 
@@ -68,7 +65,7 @@ class OkFpgaTtlSwitch(Base, SwitchInterface):
         self.fp.SetWireInValue(0x06, 0)
         self.fp.SetWireInValue(0x07, 0)
         self.fp.UpdateWireIns()
-        self.logMsg('FPGA switch reset')
+        self.log.info('FPGA switch reset')
 
     def getNumberOfSwitches(self):
         """ There are 8 TTL channels on the OK FPGA.
@@ -94,18 +91,18 @@ class OkFpgaTtlSwitch(Base, SwitchInterface):
 
           @return bool: True if on, False if off, None on error
         """
-        if channel > 7 or channel < 0:
+        if channel not in range(0, 8):
             raise KeyError('ERROR: FPGA switch only accepts channel numbers 0..7')
         return self.fp.GetWireInValue(int(channel) + 1)[1] == 1
 
     def switchOn(self, channel):
-        if channel > 7 or channel < 0:
+        if channel not in range(0, 8):
             raise KeyError('ERROR: FPGA switch only accepts channel numbers 0..7')
         self.fp.SetWireInValue(int(channel) + 1, 1)
         self.fp.UpdateWireIns()
 
     def switchOff(self, channel):
-        if channel > 7 or channel < 0:
+        if channel not in range(0, 8):
             raise KeyError('ERROR: FPGA switch only accepts channel numbers 0..7')
         self.fp.SetWireInValue(int(channel) + 1, 0)
         self.fp.UpdateWireIns()

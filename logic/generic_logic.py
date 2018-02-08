@@ -1,48 +1,46 @@
 # -*- coding: utf-8 -*-
 """
-This file contains the QuDi logic module base class.
+This file contains the Qudi logic module base class.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
-
-from core.base import Base
+from qtpy import QtCore
+from core.module import Base
 from core.util.mutex import Mutex
-from pyqtgraph.Qt import QtCore
-from fysom import Fysom
-from core.util.models import DictTableModel
+
 
 class GenericLogic(Base):
     """A generic logic interface class.
     """
     _modclass = 'GenericLogic'
     _modtype = 'logic'
-    _tasks = DictTableModel()
+    _threaded = True
 
-    def __init__(self, manager, name, configuration, callbacks, **kwargs):
+    def __init__(self, **kwargs):
         """ Initialzize a logic module.
 
-          @param object manager: Manager object that has instantiated this object
-          @param str name: unique module name
-          @param dict configuration: module configuration as a dict
-          @param dict callbacks: dict of callback functions for Fysom state machine
           @param dict kwargs: dict of additional arguments
         """
-        super().__init__(manager, name, configuration, callbacks, **kwargs)
+        super().__init__(**kwargs)
         self.taskLock = Mutex()
+
+    @QtCore.Slot(QtCore.QThread)
+    def moveToThread(self, thread):
+        super().moveToThread(thread)
 
     def getModuleThread(self):
         """ Get the thread associated to this module.

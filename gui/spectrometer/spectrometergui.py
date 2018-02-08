@@ -2,30 +2,34 @@
 """
 This module contains a GUI for operating the spectrum logic module.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-from gui.guibase import GUIBase
-from pyqtgraph.Qt import QtGui, uic
-import pyqtgraph as pg
 import os
+import pyqtgraph as pg
+
+from core.module import Connector
+from gui.colordefs import QudiPalettePale as palette
+from gui.guibase import GUIBase
+from qtpy import QtWidgets
+from qtpy import uic
 
 
-class SpectrometerWindow(QtGui.QMainWindow):
+class SpectrometerWindow(QtWidgets.QMainWindow):
 
     def __init__(self):
         """ Create the laser scanner window.
@@ -45,34 +49,16 @@ class SpectrometerGui(GUIBase):
     _modtype = 'gui'
 
     # declare connectors
-    _in = {'spectrumlogic1': 'SpectrumLogic'
-           }
+    spectrumlogic1 = Connector(interface='SpectrumLogic')
 
-    def __init__(self, manager, name, config, **kwargs):
-        # declare actions for state transitions
-        c_dict = {'onactivate': self.initUI, 'ondeactivate': self.deactivation}
-        super().__init__(manager, name, config, c_dict)
+    def __init__(self, config, **kwargs):
+        super().__init__(config=config, **kwargs)
 
-        self.logMsg('The following configuration was found.', msgType='status')
-
-        # checking for the right configuration
-        for key in config.keys():
-            self.logMsg('{}: {}'.format(key, config[key]),
-                        msgType='status')
-
-    def initUI(self, e=None):
+    def on_activate(self):
         """ Definition and initialisation of the GUI.
-
-        @param object e: Fysom.event object from Fysom class.
-                         An object created by the state machine module Fysom,
-                         which is connected to a specific event (have a look in
-                         the Base Class). This object contains the passed event,
-                         the state before the event happened and the destination
-                         of the state which should be reached after the event
-                         had happened.
         """
 
-        self._spectrum_logic = self.connector['in']['spectrumlogic1']['object']
+        self._spectrum_logic = self.get_connector('spectrumlogic1')
 
         # setting up the window
         self._mw = SpectrometerWindow()
@@ -119,22 +105,19 @@ class SpectrometerGui(GUIBase):
 
         # Create an empty plot curve to be filled later, set its pen
         self._curve1 = self._pw.plot()
-        self._curve1.setPen({'color': '0F0', 'width': 2})
+        self._curve1.setPen(palette.c2, width=2)
 
         self._save_PNG = True
 
-    def deactivation(self, e):
+    def on_deactivate(self):
         """ Deinitialisation performed during deactivation of the module.
-
-        @param object e: Fysom.event object from Fysom class. A more detailed
-                         explanation can be found in the method initUI.
         """
         self._mw.close()
 
     def show(self):
         """Make window visible and put it above all other windows.
         """
-        QtGui.QMainWindow.show(self._mw)
+        QtWidgets.QMainWindow.show(self._mw)
         self._mw.activateWindow()
         self._mw.raise_()
 

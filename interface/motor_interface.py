@@ -1,29 +1,30 @@
 # -*- coding: utf-8 -*-
 
 """
-This file contains the QuDi Interface file to control motorized stages.
+This file contains the Qudi Interface file to control motorized stages.
 
-QuDi is free software: you can redistribute it and/or modify
+Qudi is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-QuDi is distributed in the hope that it will be useful,
+Qudi is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 
 You should have received a copy of the GNU General Public License
-along with QuDi. If not, see <http://www.gnu.org/licenses/>.
+along with Qudi. If not, see <http://www.gnu.org/licenses/>.
 
 Copyright (c) the Qudi Developers. See the COPYRIGHT.txt file at the
 top-level directory of this distribution and at <https://github.com/Ulm-IQO/qudi/>
 """
 
-from core.util.customexceptions import InterfaceImplementationError
+import abc
+from core.util.interfaces import InterfaceMetaclass
 
 
-class MotorInterface():
+class MotorInterface(metaclass=InterfaceMetaclass):
     """ This is the Interface class to define the controls for the simple
         step motor device. The actual hardware implementation might have a
         different amount of axis. Implement each single axis as 'private'
@@ -33,6 +34,7 @@ class MotorInterface():
     _modtype = 'MotorInterface'
     _modclass = 'interface'
 
+    @abc.abstractmethod
     def get_constraints(self):
         """ Retrieve the hardware constrains from the motor device.
 
@@ -93,10 +95,9 @@ class MotorInterface():
         constraints[axis0['label']] = axis0
         constraints[axis1['label']] = axis1
         """
+        pass
 
-        raise InterfaceImplementationError('PulserInterface>get_constraints')
-        return constraints
-
+    @abc.abstractmethod
     def move_rel(self,  param_dict):
         """ Moves stage in given direction (relative movement)
 
@@ -110,9 +111,9 @@ class MotorInterface():
 
         @return int: error code (0:OK, -1:error)
         """
-        raise InterfaceImplementationError('MagnetStageInterface>move_rel')
-        return -1
+        pass
 
+    @abc.abstractmethod
     def move_abs(self, param_dict):
         """ Moves stage to absolute position (absolute movement)
 
@@ -124,17 +125,17 @@ class MotorInterface():
 
         @return int: error code (0:OK, -1:error)
         """
-        raise InterfaceImplementationError('MagnetStageInterface>move_abs')
-        return -1
+        pass
 
+    @abc.abstractmethod
     def abort(self):
         """ Stops movement of the stage
 
         @return int: error code (0:OK, -1:error)
         """
-        raise InterfaceImplementationError('MagnetStageInterface>abort')
-        return -1
+        pass
 
+    @abc.abstractmethod
     def get_pos(self, param_list=None):
         """ Gets current position of the stage arms
 
@@ -147,9 +148,9 @@ class MotorInterface():
         @return dict: with keys being the axis labels and item the current
                       position.
         """
-        raise InterfaceImplementationError('MagnetStageInterface>get_pos')
-        return -1
+        pass
 
+    @abc.abstractmethod
     def get_status(self, param_list=None):
         """ Get the status of the position
 
@@ -161,9 +162,9 @@ class MotorInterface():
 
         @return dict: with the axis label as key and the status number as item.
         """
-        raise InterfaceImplementationError('MagnetStageInterface>get_status')
-        return -1
+        pass
 
+    @abc.abstractmethod
     def calibrate(self, param_list=None):
         """ Calibrates the stage.
 
@@ -179,9 +180,9 @@ class MotorInterface():
         zero point for the passed axis. The calibration procedure will be
         different for each stage.
         """
-        raise InterfaceImplementationError('MagnetStageInterface>calibrate')
-        return -1
+        pass
 
+    @abc.abstractmethod
     def get_velocity(self, param_list=None):
         """ Gets the current velocity for all connected axes.
 
@@ -193,9 +194,9 @@ class MotorInterface():
 
         @return dict : with the axis label as key and the velocity as item.
         """
-        raise InterfaceImplementationError('MagnetStageInterface>get_velocity')
-        return -1
+        pass
 
+    @abc.abstractmethod
     def set_velocity(self, param_dict):
         """ Write new value for velocity.
 
@@ -207,6 +208,4 @@ class MotorInterface():
 
         @return int: error code (0:OK, -1:error)
         """
-        raise InterfaceImplementationError('MagnetStageInterface>set_velocity')
-        return -1
-
+        pass
